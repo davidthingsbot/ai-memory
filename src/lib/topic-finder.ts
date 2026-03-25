@@ -101,7 +101,7 @@ export function getPreviousSearches(): Array<{ topic: string; result: TopicResul
   return ctx.previousSearches
 }
 
-function buildSystemPrompt(ctx: ExplorationContext): string {
+function buildSystemPrompt(ctx: ExplorationContext, scope?: BrowseScope | null): string {
   let prompt = `You are a repository organization assistant. Your job is to find the best place in a GitHub repository to store a new piece of knowledge.
 
 Given a topic description from the user, you should:
@@ -124,6 +124,34 @@ After exploring, respond with a JSON object (and nothing else) in this format:
 }
 
 Be thorough but efficient. Use the cached information below when available.`
+
+  // Add scope-specific instructions (IMPORTANT - affects AI behavior)
+  if (scope) {
+    prompt += '\n\n## IMPORTANT: User-Provided Scope\n'
+    
+    if (scope.type === 'file') {
+      prompt += 'The user has selected a SPECIFIC FILE: ' + scope.path + '\n'
+      prompt += 'This is a strong signal that the content belongs in this file.\n'
+      prompt += '- Your action should almost certainly be "update" with this exact path\n'
+      prompt += '- Do NOT explore other locations unless the file is clearly unrelated to the topic\n'
+      prompt += '- Do NOT suggest creating a new file unless the selected file is completely wrong\n'
+      prompt += '- Trust the user\'s judgment - they selected this file for a reason'
+    } else if (scope.type === 'directory') {
+      prompt += 'The user has selected a SPECIFIC DIRECTORY: ' + scope.path + '\n'
+      prompt += 'This is a constraint - all suggestions must be within this directory.\n'
+      prompt += '- Only suggest paths that start with "' + scope.path + '/"\n'
+      prompt += '- Look for existing files in this directory that could be updated\n'
+      prompt += '- If creating a new file, it must be inside this directory\n'
+      prompt += '- Do NOT suggest locations outside this directory under any circumstances'
+    } else if (scope.type === 'selection') {
+      prompt += 'The user has selected a SPECIFIC PASSAGE from: ' + scope.path + '\n'
+      prompt += 'This selection provides context about what they want to document.\n'
+      prompt += '- The selected text indicates the topic area or related content\n'
+      prompt += '- Your action should likely be "update" to this same file\n'
+      prompt += '- Place new content near or related to the selected passage\n'
+      prompt += '- The selection helps you understand the user\'s intent'
+    }
+  }
 
   // Add cached repo structure
   if (ctx.repoStructure) {
@@ -190,33 +218,43 @@ export async function findTopicLocation(
     onProgress?.(`Context: ${ctx.previousSearches.length} previous searches available`)
   }
 
-  // Build user message with scope context
-  let userContent = `Repository: ${repo.full_name}\n\nTopic to document: "${topicDescription}"`
+  // Build user message - scope first (prominent), then topic
+  let userContent = 'Repository: ' + repo.full_name + '\n'
   
+  // Scope comes FIRST to establish context
   if (scope) {
-    userContent += `\n\n## Scope Provided by User`
+    userContent += '\n## Scope (User Selection)\n'
     if (scope.type === 'directory') {
-      userContent += `\nThe user has selected the directory: ${scope.path}`
-      userContent += `\nFocus your search within this directory or create new content here.`
+      userContent += '**Directory selected:** `' + scope.path + '`\n'
+      userContent += 'Constraint: All suggestions MUST be within this directory.\n'
     } else if (scope.type === 'file') {
-      userContent += `\nThe user has selected the file: ${scope.path}`
+      userContent += '**File selected:** `' + scope.path + '`\n'
+      userContent += 'The user expects this content to go in this specific file.\n'
       if (scope.fileContent) {
-        userContent += `\n\nFile content:\n\`\`\`\n${scope.fileContent.slice(0, 2000)}\n\`\`\``
+        userContent += '\nCurrent file content:\n```\n' + scope.fileContent.slice(0, 2000) + '\n```\n'
       }
-      userContent += `\nThis file is likely where the content should go (as an update).`
     } else if (scope.type === 'selection') {
-      userContent += `\nThe user has selected a passage from: ${scope.path}`
+      userContent += '**Text selected from:** `' + scope.path + '`\n'
       if (scope.selectedText) {
-        userContent += `\n\nSelected text:\n> ${scope.selectedText}`
+        userContent += '\nSelected passage:\n> ' + scope.selectedText + '\n'
       }
-      userContent += `\nThis selection indicates where or how the new content relates.`
+      userContent += '\nThis selection indicates the context/location for new content.\n'
+      if (scope.fileContent) {
+        userContent += '\nFull file content:\n```\n' + scope.fileContent.slice(0, 2000) + '\n```\n'
+      }
     }
   }
   
-  userContent += `\n\nPlease find the best location for this content.${ctx.repoStructure ? ' The repository structure is already cached above, so you may not need to call get_repo_structure unless you need more detail.' : ''}`
+  // Topic comes after scope
+  userContent += '\n## Topic to Document\n"' + topicDescription + '"\n'
+  
+  userContent += '\nPlease determine the best location for this content.'
+  if (ctx.repoStructure) {
+    userContent += ' The repository structure is already cached in the system context.'
+  }
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt(ctx) },
+    { role: 'system', content: buildSystemPrompt(ctx, scope) },
     { role: 'user', content: userContent },
   ]
 
