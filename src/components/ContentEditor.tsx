@@ -10,12 +10,12 @@ import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { 
   Sparkles, RotateCcw, Check, 
   ExternalLink, MessageSquare, FileEdit,
-  Undo2, Redo2, ChevronDown, ChevronUp
+  Undo2, Redo2, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
 import { ChangeSetPreview } from './ChangeSetPreview'
-import { ClarificationDialog } from './ClarificationDialog'
+import { ClarificationBox } from './ClarificationBox'
 import type { BrowseScope } from './RepoBrowser'
 
 interface ContentEditorProps {
@@ -76,8 +76,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setRawContent(next)
   }, [redoStack, rawContent])
 
-  // Clarification dialog state
-  const [clarificationOpen, setClarificationOpen] = useState(false)
+  // Clarification state (inline, not dialog)
   const [clarificationQuestion, setClarificationQuestion] = useState('')
   const [pendingOperation, setPendingOperation] = useState<{
     type: 'tidy' | 'improve' | 'fullspec'
@@ -240,13 +239,12 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
 
   // Handle clarification answer - retry the operation with additional context
   const handleClarificationAnswer = useCallback(async (answer: string) => {
-    setClarificationOpen(false)
-    
     if (!pendingOperation) return
     
     const { type, originalText, context } = pendingOperation
     const augmentedText = `${originalText}\n\n[User clarification: ${answer}]`
     
+    setClarificationQuestion('') // Clear question
     setIsWorking(true)
     addStep(`Continuing ${type} with clarification...`)
     
@@ -264,7 +262,41 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         // Still needs more clarification
         setClarificationQuestion(result.content)
         setPendingOperation({ type, originalText: augmentedText, context })
-        setClarificationOpen(true)
+      } else {
+        setRawContent(result.content)
+        setPendingOperation(null)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${type} failed`)
+      setPendingOperation(null)
+    }
+    
+    setIsWorking(false)
+  }, [pendingOperation, addStep])
+
+  // Handle clarification skip - proceed without the clarification
+  const handleClarificationSkip = useCallback(async () => {
+    if (!pendingOperation) return
+    
+    const { type, originalText, context } = pendingOperation
+    
+    setClarificationQuestion('') // Clear question
+    setIsWorking(true)
+    addStep(`Continuing ${type} without clarification...`)
+    
+    try {
+      let result: TextToolResult
+      if (type === 'tidy') {
+        result = await tidyText(originalText + '\n\n[User skipped clarification - proceed with best guess]', addStep, context)
+      } else if (type === 'improve') {
+        result = await improveText(originalText + '\n\n[User skipped clarification - proceed with best guess]', addStep, context)
+      } else {
+        result = await fullSpecText(originalText + '\n\n[User skipped clarification - proceed with best guess]', addStep, context)
+      }
+      
+      if (result.type === 'question') {
+        // Still asking questions - just use whatever we have
+        setRawContent(originalText)
       } else {
         setRawContent(result.content)
       }
@@ -331,7 +363,6 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         // AI needs clarification
         setClarificationQuestion(result.content)
         setPendingOperation({ type: 'tidy', originalText: rawContent, context: ctx })
-        setClarificationOpen(true)
         setIsWorking(false)
       } else {
         setRawContent(result.content)
@@ -361,7 +392,6 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         // AI needs clarification
         setClarificationQuestion(result.content)
         setPendingOperation({ type: 'improve', originalText: rawContent, context: ctx })
-        setClarificationOpen(true)
         setIsWorking(false)
       } else {
         setRawContent(result.content)
@@ -390,7 +420,6 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       if (result.type === 'question') {
         setClarificationQuestion(result.content)
         setPendingOperation({ type: 'fullspec', originalText: rawContent, context: ctx })
-        setClarificationOpen(true)
         setIsWorking(false)
       } else {
         setRawContent(result.content)
@@ -529,20 +558,18 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           {stage !== 'input' && (
             <button
               onClick={() => setInputCollapsed(!inputCollapsed)}
-              className="w-full flex items-center justify-between p-3 text-sm font-medium text-left bg-muted/50 hover:bg-muted transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left bg-muted/50 hover:bg-muted/70 transition-colors"
             >
-              <span className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                Input Notes
-                <span className="text-muted-foreground font-normal">
-                  ({rawContent.length} chars)
-                </span>
-              </span>
               {inputCollapsed ? (
-                <ChevronDown className="h-4 w-4" />
+                <ChevronRight className="h-4 w-4 shrink-0" />
               ) : (
-                <ChevronUp className="h-4 w-4" />
+                <ChevronDown className="h-4 w-4 shrink-0" />
               )}
+              <MessageSquare className="h-4 w-4 shrink-0" />
+              <span className="flex-1">Input Notes</span>
+              <span className="text-xs text-muted-foreground">
+                {rawContent.length} chars
+              </span>
             </button>
           )}
           
@@ -694,6 +721,15 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           />
         )}
 
+        {/* Clarification - inline when AI needs to ask a question */}
+        {clarificationQuestion && (
+          <ClarificationBox
+            question={clarificationQuestion}
+            onAnswer={handleClarificationAnswer}
+            onSkip={handleClarificationSkip}
+          />
+        )}
+
         {/* Stage: Generating - just show loading state since WorkingBox is above */}
         {stage === 'generating' && steps.length === 0 && (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
@@ -791,17 +827,6 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         )}
       </CardContent>
 
-      {/* Clarification dialog */}
-      <ClarificationDialog
-        open={clarificationOpen}
-        question={clarificationQuestion}
-        onAnswer={handleClarificationAnswer}
-        onCancel={() => {
-          setClarificationOpen(false)
-          setPendingOperation(null)
-        }}
-        context={getTextContext()}
-      />
     </Card>
   )
 }
