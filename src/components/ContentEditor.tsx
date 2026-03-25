@@ -325,19 +325,29 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   onClick={handleContentCursorChange}
                   onKeyUp={handleContentCursorChange}
                   disabled={contentTranscription.isConnecting}
-                  style={contentTranscription.isRecording ? { caretColor: 'transparent' } : undefined}
+                  style={contentTranscription.isRecording ? { caretColor: 'transparent', color: 'transparent' } : undefined}
                 />
-                {/* Overlay with blinking cursor at text end while recording */}
-                {contentTranscription.isRecording && (
-                  <div 
-                    className="absolute inset-0 pointer-events-none p-3 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden"
-                    aria-hidden="true"
-                  >
-                    <span className="invisible">{rawContent}</span>
-                    <span className={cursorVisible ? 'opacity-100' : 'opacity-0'}>▌</span>
-                    <span className="text-red-500">●</span>
-                  </div>
-                )}
+                {/* Overlay with blinking cursor at insert position while recording */}
+                {contentTranscription.isRecording && (() => {
+                  // Calculate cursor position: insert point + length of transcribed text so far
+                  const baseLen = contentBaseTextRef.current.length
+                  const transcribedLen = rawContent.length - baseLen
+                  const cursorPos = contentInsertPosRef.current + transcribedLen
+                  const beforeCursor = rawContent.slice(0, cursorPos)
+                  const afterCursor = rawContent.slice(cursorPos)
+                  
+                  return (
+                    <div 
+                      className="absolute inset-0 pointer-events-none p-3 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden"
+                      aria-hidden="true"
+                    >
+                      <span>{beforeCursor}</span>
+                      <span className={cursorVisible ? 'opacity-100' : 'opacity-0'}>▌</span>
+                      <span className="text-red-500">●</span>
+                      <span>{afterCursor}</span>
+                    </div>
+                  )
+                })()}
               </div>
             </div>
 
