@@ -1,5 +1,10 @@
 /**
  * Text Tools - AI-powered text manipulation
+ * 
+ * Three levels of assistance:
+ * - Tidy: Fix errors only (spelling, grammar, formatting)
+ * - Improve: Brief suggestions for rephrasing and structure (few paragraphs)
+ * - Full Spec: Comprehensive analysis with web research (detailed checklist)
  */
 
 import { getOpenAIKey, getSerperKey } from '@/components/Credentials'
@@ -24,7 +29,6 @@ export interface TextToolResult {
 
 // Check if AI response is asking for clarification
 function parseResponse(response: string): TextToolResult {
-  // Check for clarification markers
   const clarificationMarkers = [
     /^CLARIFICATION:\s*/i,
     /^QUESTION:\s*/i,
@@ -45,8 +49,23 @@ function parseResponse(response: string): TextToolResult {
   return { type: 'result', content: response }
 }
 
+// Build context string for prompts
+function buildContextInfo(context?: TextContext): string {
+  const parts = [
+    context?.filePath ? `Target file: "${context.filePath}"` : '',
+    context?.repoName ? `Repository: ${context.repoName}` : '',
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join('\n') : ''
+}
+
+function buildExistingDocContext(context?: TextContext, maxChars = 2000): string {
+  if (!context?.fileContent) return ''
+  return `\n\nExisting document (for reference on proper names, terms, and style):\n---\n${context.fileContent.slice(0, maxChars)}\n---`
+}
+
 /**
- * Tidy up text - fix formatting, spelling, grammar without changing content
+ * Tidy - Fix errors only (spelling, grammar, formatting)
+ * Does NOT change meaning or add content
  */
 export async function tidyText(
   text: string,
@@ -57,6 +76,9 @@ export async function tidyText(
   if (!apiKey) throw new Error('No OpenAI API key')
 
   onProgress?.('Tidying text...')
+
+  const contextInfo = buildContextInfo(context)
+  const existingDoc = buildExistingDocContext(context)
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -69,7 +91,7 @@ export async function tidyText(
       messages: [
         {
           role: 'system',
-          content: `You are a text editor. Your job is to clean up the user's text:
+          content: `You are a text editor. Clean up the user's text:
 - Fix spelling mistakes
 - Fix grammatical errors  
 - Fix punctuation
@@ -79,12 +101,9 @@ export async function tidyText(
 - Do NOT remove any information
 - Keep the same tone and style
 - Use plain ASCII quotes (" and ') only - never curly/smart quotes
-${context?.filePath ? `\nContext: This text is for "${context.filePath}"` : ''}
-${context?.fileContent ? `\nExisting document content (for reference on proper names/terms):\n---\n${context.fileContent.slice(0, 2000)}\n---` : ''}
+${contextInfo ? `\n${contextInfo}` : ''}${existingDoc}
 
-If something is genuinely ambiguous and you cannot make a reasonable guess, start your response with "CLARIFICATION:" followed by a specific question. Only ask if truly necessary.
-
-Otherwise, return ONLY the cleaned up text, nothing else.`
+If genuinely ambiguous, start with "CLARIFICATION:" and ask. Otherwise return ONLY the cleaned text.`
         },
         { role: 'user', content: text }
       ],
@@ -98,23 +117,16 @@ Otherwise, return ONLY the cleaned up text, nothing else.`
   const data = await response.json()
   const result = data.choices[0]?.message?.content
 
-  if (!result) {
-    throw new Error('No response from AI')
-  }
+  if (!result) throw new Error('No response from AI')
 
   const parsed = parseResponse(result)
-  
-  if (parsed.type === 'question') {
-    onProgress?.('❓ Clarification needed')
-  } else {
-    onProgress?.('✓ Text tidied')
-  }
-  
+  onProgress?.(parsed.type === 'question' ? '❓ Clarification needed' : '✓ Text tidied')
   return parsed
 }
 
 /**
- * Improve text - reorganize, clarify, extend with web research
+ * Improve - Brief suggestions for rephrasing and structure
+ * No research, just a few paragraphs of guidance
  */
 export async function improveText(
   text: string,
@@ -124,14 +136,75 @@ export async function improveText(
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
 
-  // Check if we have Serper key for web search
+  onProgress?.('Analyzing text...')
+
+  const contextInfo = buildContextInfo(context)
+  const existingDoc = buildExistingDocContext(context)
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: getSelectedModel(),
+      messages: [
+        {
+          role: 'system',
+          content: `You are a writing coach. Give brief, actionable suggestions to improve the user's text.
+${contextInfo ? `\n${contextInfo}` : ''}${existingDoc}
+
+In just 2-3 short paragraphs, suggest:
+- How to rephrase awkward or unclear sentences
+- How to improve structure and flow
+- Any obvious gaps or redundancies
+
+Be concise and specific. Reference actual phrases from the text.
+Do NOT rewrite the text yourself.
+Do NOT do research or comprehensive analysis.
+Use plain ASCII quotes (" and ') only.
+
+If genuinely ambiguous, start with "CLARIFICATION:" and ask. Otherwise return ONLY your brief suggestions.`
+        },
+        { role: 'user', content: text }
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`API error: ${await response.text()}`)
+  }
+
+  const data = await response.json()
+  const result = data.choices[0]?.message?.content
+
+  if (!result) throw new Error('No response from AI')
+
+  const parsed = parseResponse(result)
+  onProgress?.(parsed.type === 'question' ? '❓ Clarification needed' : '✓ Suggestions ready')
+  return parsed
+}
+
+/**
+ * Full Spec - Comprehensive analysis with web research
+ * Detailed actionable checklist covering all aspects
+ */
+export async function fullSpecText(
+  text: string,
+  onProgress?: ProgressCallback,
+  context?: TextContext
+): Promise<TextToolResult> {
+  const apiKey = getOpenAIKey()
+  if (!apiKey) throw new Error('No OpenAI API key')
+
+  // Web research if Serper key available
   const hasSerperKey = !!getSerperKey()
   let researchContext = ''
 
   if (hasSerperKey) {
     onProgress?.('Analyzing text for research topics...')
     
-    // First, ask AI what to research
     const analysisResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -154,7 +227,6 @@ export async function improveText(
       const analysisData = await analysisResponse.json()
       const queries = analysisData.choices[0]?.message?.content?.split('\n').filter((q: string) => q.trim()) || []
       
-      // Perform web searches
       for (const query of queries.slice(0, 3)) {
         onProgress?.(`🌐 Searching: ${query.slice(0, 50)}...`)
         try {
@@ -172,41 +244,29 @@ export async function improveText(
     }
   }
 
-  onProgress?.('Analyzing improvements...')
+  onProgress?.('Building comprehensive spec...')
 
-  // Build context info for the prompt
-  const contextInfo = [
-    context?.filePath ? `Target file: "${context.filePath}"` : '',
-    context?.repoName ? `Repository: ${context.repoName}` : '',
-  ].filter(Boolean).join('\n')
+  const contextInfo = buildContextInfo(context)
+  const existingDoc = buildExistingDocContext(context, 3000)
 
-  const existingDocContext = context?.fileContent 
-    ? `\n\nExisting document (for reference on proper names, terms, and style):\n---\n${context.fileContent.slice(0, 3000)}\n---`
-    : ''
+  const systemPrompt = `You are an expert editor and writing consultant. Create a comprehensive SPECIFICATION for improving the user's text. Do NOT rewrite the text yourself.
+${contextInfo ? `\n${contextInfo}` : ''}${existingDoc}
 
-  const systemPrompt = `You are an expert editor and writing consultant. Analyze the user's text and create a clear SPECIFICATION for how it should be improved. Do NOT rewrite the text yourself.
-${contextInfo ? `\n${contextInfo}` : ''}
-
-Your spec should include:
-- **Proper Names & Terms**: Verify capitalization and consistency of product names, people, technical terms
+Your spec should cover:
+- **Proper Names & Terms**: Capitalization and consistency issues
 - **Structure**: How to reorganize for better flow
 - **Clarity**: Which sections are unclear and how to fix them
 - **Gaps**: What's missing that should be added
 - **Redundancy**: What can be cut or consolidated
 - **Research**: Specific facts/details to look up and add
-${researchContext ? '\n- **From Research**: Specific information from the search results that should be incorporated' : ''}
+${researchContext ? '\n- **From Research**: Specific information from the search results to incorporate' : ''}
 
-Format as a clear, actionable checklist. Be specific - reference actual sentences or paragraphs.
+Format as a detailed, actionable checklist. Be specific - reference actual sentences or paragraphs.
 Use plain ASCII quotes (" and ') only.
 
-If something is genuinely ambiguous (e.g., unclear acronyms, ambiguous references, missing critical context), start your response with "CLARIFICATION:" followed by a specific question. Only ask if truly necessary.
-
-Otherwise, return ONLY the improvement specification, not rewritten text.`
+If genuinely ambiguous (unclear acronyms, ambiguous references), start with "CLARIFICATION:" and ask. Otherwise return ONLY the spec.`
 
   let userContent = `Text to analyze:\n${text}`
-  if (existingDocContext) {
-    userContent += existingDocContext
-  }
   if (researchContext) {
     userContent += `\n\n---\nResearch results:${researchContext}`
   }
@@ -233,17 +293,11 @@ Otherwise, return ONLY the improvement specification, not rewritten text.`
   const data = await response.json()
   const result = data.choices[0]?.message?.content
 
-  if (!result) {
-    throw new Error('No response from AI')
-  }
+  if (!result) throw new Error('No response from AI')
 
   const parsed = parseResponse(result)
-  
-  if (parsed.type === 'question') {
-    onProgress?.('❓ Clarification needed')
-  } else {
-    onProgress?.('✓ Improvement spec ready' + (researchContext ? ' (with research)' : ''))
-  }
-  
+  onProgress?.(parsed.type === 'question' 
+    ? '❓ Clarification needed' 
+    : '✓ Full spec ready' + (researchContext ? ' (with research)' : ''))
   return parsed
 }

@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { generateChangeSet, reviseChangeSet, type ChangeSet } from '@/lib/changeset-generator'
-import { tidyText, improveText, type TextToolResult } from '@/lib/text-tools'
+import { tidyText, improveText, fullSpecText, type TextToolResult } from '@/lib/text-tools'
 import { commitChangeSet } from '@/lib/github-commit'
 import { clearContext, prefetchRepoStructure } from '@/lib/topic-finder'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
@@ -77,7 +77,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   const [clarificationOpen, setClarificationOpen] = useState(false)
   const [clarificationQuestion, setClarificationQuestion] = useState('')
   const [pendingOperation, setPendingOperation] = useState<{
-    type: 'tidy' | 'improve'
+    type: 'tidy' | 'improve' | 'fullspec'
     originalText: string
     context: any
   } | null>(null)
@@ -251,8 +251,10 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       let result: TextToolResult
       if (type === 'tidy') {
         result = await tidyText(augmentedText, addStep, context)
-      } else {
+      } else if (type === 'improve') {
         result = await improveText(augmentedText, addStep, context)
+      } else {
+        result = await fullSpecText(augmentedText, addStep, context)
       }
       
       if (result.type === 'question') {
@@ -363,6 +365,35 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Improve failed')
+      setIsWorking(false)
+    }
+  }, [rawContent, addStep, pushUndo, getTextContext])
+
+  // Full Spec - comprehensive analysis with research
+  const handleFullSpec = useCallback(async () => {
+    if (!rawContent.trim()) return
+    
+    pushUndo() // Save current state for undo
+    setError(null)
+    addStep('--- Full Spec')
+    setWorkStartTime(Date.now())
+    setIsWorking(true)
+    
+    try {
+      const ctx = getTextContext()
+      const result = await fullSpecText(rawContent, addStep, ctx)
+      
+      if (result.type === 'question') {
+        setClarificationQuestion(result.content)
+        setPendingOperation({ type: 'fullspec', originalText: rawContent, context: ctx })
+        setClarificationOpen(true)
+        setIsWorking(false)
+      } else {
+        setRawContent(result.content)
+        setIsWorking(false)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Full spec failed')
       setIsWorking(false)
     }
   }, [rawContent, addStep, pushUndo, getTextContext])
@@ -573,9 +604,18 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                 variant="outline"
                 onClick={handleImprove}
                 disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
-                title="Reorganize, clarify, extend with web research"
+                title="Brief suggestions for rephrasing and structure"
               >
                 Improve
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleFullSpec}
+                disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
+                title="Comprehensive analysis with web research"
+              >
+                Full Spec
               </Button>
 
               <Button
