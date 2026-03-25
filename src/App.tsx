@@ -1,6 +1,17 @@
-import { Button } from '@/components/ui/button'
+import { useState, useCallback } from 'react'
+import { Credentials } from '@/components/Credentials'
 
 function App() {
+  const [hasOpenAI, setHasOpenAI] = useState(false)
+  const [hasGitHub, setHasGitHub] = useState(false)
+
+  const handleCredentialsChange = useCallback((openai: boolean, github: boolean) => {
+    setHasOpenAI(openai)
+    setHasGitHub(github)
+  }, [])
+
+  const credentialsReady = hasOpenAI && hasGitHub
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-2xl">
@@ -12,14 +23,30 @@ function App() {
         </header>
 
         <main className="space-y-6">
-          <div className="rounded-lg border bg-card p-6">
-            <p className="text-center text-muted-foreground mb-4">
-              Ready to start capturing memories.
-            </p>
-            <div className="flex justify-center">
-              <Button>Get Started</Button>
+          {/* Step 1: Credentials */}
+          <Credentials onCredentialsChange={handleCredentialsChange} />
+
+          {/* Step 2: Repository Selection (shown when credentials ready) */}
+          {credentialsReady && (
+            <div className="rounded-lg border bg-card p-6">
+              <h2 className="text-lg font-semibold mb-2">Repository</h2>
+              <p className="text-muted-foreground text-sm">
+                Select which repository to store your memories in.
+              </p>
+              <p className="text-muted-foreground text-sm mt-4 italic">
+                (Coming soon)
+              </p>
             </div>
-          </div>
+          )}
+
+          {/* Placeholder for remaining steps */}
+          {!credentialsReady && (
+            <div className="rounded-lg border bg-muted/50 p-6 text-center">
+              <p className="text-muted-foreground text-sm">
+                Add your API keys above to continue.
+              </p>
+            </div>
+          )}
         </main>
       </div>
     </div>
