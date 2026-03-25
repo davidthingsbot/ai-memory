@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { findTopicLocation, type TopicResult } from '@/lib/topic-finder'
-import { MessageSquare, Search, FileText, FilePlus, Loader2, Check, RotateCcw } from 'lucide-react'
+import { startRecording, stopRecording, cancelRecording, transcribeAudio } from '@/lib/audio-transcribe'
+import { MessageSquare, Search, FileText, FilePlus, Loader2, Check, RotateCcw, Mic } from 'lucide-react'
 
 interface TopicFinderProps {
   repoName: string
@@ -16,9 +17,15 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
   const [progress, setProgress] = useState<string>('')
   const [result, setResult] = useState<TopicResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  
+  // Voice recording state
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const recordingRef = useRef(false)
 
-  const handleSearch = useCallback(async () => {
-    if (!topic.trim()) return
+  const handleSearch = useCallback(async (searchTopic?: string) => {
+    const topicToSearch = searchTopic || topic
+    if (!topicToSearch.trim()) return
 
     setLoading(true)
     setProgress('Starting...')
@@ -26,7 +33,7 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
     setError(null)
 
     try {
-      const location = await findTopicLocation(topic, setProgress)
+      const location = await findTopicLocation(topicToSearch, setProgress)
       setResult(location)
       onLocationFound?.(location)
     } catch (err) {
@@ -50,6 +57,66 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
       handleSearch()
     }
   }
+
+  // Voice recording handlers
+  const handleMicDown = useCallback(async () => {
+    if (loading || transcribing) return
+    
+    try {
+      setError(null)
+      await startRecording()
+      setRecording(true)
+      recordingRef.current = true
+    } catch (err) {
+      console.error('Failed to start recording:', err)
+      setError('Could not access microphone. Please allow microphone access.')
+    }
+  }, [loading, transcribing])
+
+  const handleMicUp = useCallback(async () => {
+    if (!recordingRef.current) return
+    
+    recordingRef.current = false
+    setRecording(false)
+    setTranscribing(true)
+    setError(null)
+
+    try {
+      const audioBlob = await stopRecording()
+      const text = await transcribeAudio(audioBlob)
+      
+      if (text.trim()) {
+        setTopic(text)
+        // Automatically search after transcription
+        handleSearch(text)
+      }
+    } catch (err) {
+      console.error('Transcription failed:', err)
+      setError(err instanceof Error ? err.message : 'Transcription failed')
+    } finally {
+      setTranscribing(false)
+    }
+  }, [handleSearch])
+
+  const handleMicLeave = useCallback(() => {
+    // If mouse leaves the button while recording, cancel
+    if (recordingRef.current) {
+      recordingRef.current = false
+      setRecording(false)
+      cancelRecording()
+    }
+  }, [])
+
+  // Touch handlers for mobile
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    handleMicDown()
+  }, [handleMicDown])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    handleMicUp()
+  }, [handleMicUp])
 
   return (
     <Card className="w-full">
@@ -113,15 +180,38 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
           // Show input
           <div className="space-y-4">
             <div className="flex gap-2">
+              {/* Voice button */}
+              <Button
+                variant={recording ? "destructive" : "outline"}
+                size="icon"
+                disabled={loading || transcribing}
+                onMouseDown={handleMicDown}
+                onMouseUp={handleMicUp}
+                onMouseLeave={handleMicLeave}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                className={`shrink-0 ${recording ? 'animate-pulse' : ''}`}
+                title="Hold to speak"
+              >
+                {transcribing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mic className={`h-4 w-4 ${recording ? 'text-white' : ''}`} />
+                )}
+              </Button>
+
               <Input
-                placeholder="e.g., How to prune apple trees, or Notes about our Q3 planning meeting"
+                placeholder="e.g., How to prune apple trees"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={loading}
+                disabled={loading || recording || transcribing}
                 className="flex-1"
               />
-              <Button onClick={handleSearch} disabled={loading || !topic.trim()}>
+              <Button 
+                onClick={() => handleSearch()} 
+                disabled={loading || !topic.trim() || recording || transcribing}
+              >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -129,6 +219,25 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
                 )}
               </Button>
             </div>
+
+            {/* Recording indicator */}
+            {recording && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
+                </span>
+                Recording... Release to send
+              </div>
+            )}
+
+            {/* Transcribing indicator */}
+            {transcribing && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Transcribing...
+              </div>
+            )}
 
             {/* Progress indicator */}
             {loading && progress && (
@@ -144,8 +253,7 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
             )}
 
             <p className="text-xs text-muted-foreground">
-              The AI will explore your repository structure to find the best place for this content.
-              It may create a new file or suggest adding to an existing one.
+              Hold the mic button to speak, or type your topic. The AI will explore your repository to find the best location.
             </p>
           </div>
         )}
