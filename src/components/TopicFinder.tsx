@@ -23,6 +23,7 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
   const [transcribing, setTranscribing] = useState(false)
   const recordingRef = useRef(false)
   const recordStartTime = useRef<number>(0)
+  const isHoldMode = useRef(false) // true = hold-to-record, false = toggle
 
   const handleSearch = useCallback(async (searchTopic?: string) => {
     const topicToSearch = searchTopic || topic
@@ -59,10 +60,8 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
     }
   }
 
-  // Voice recording handlers
-  const handleMicDown = useCallback(async () => {
-    if (loading || transcribing) return
-    
+  // Voice recording handlers - supports both hold-to-record and tap-to-toggle
+  const startRec = useCallback(async () => {
     try {
       setError(null)
       await startRecording()
@@ -73,21 +72,18 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
       console.error('Failed to start recording:', err)
       setError('Could not access microphone. Please allow microphone access.')
     }
-  }, [loading, transcribing])
+  }, [])
 
-  const handleMicUp = useCallback(async () => {
+  const stopRec = useCallback(async (autoSearch = true) => {
     if (!recordingRef.current) return
     
     const duration = Date.now() - recordStartTime.current
-    const MIN_DURATION = 500 // Minimum 500ms recording
-    
     recordingRef.current = false
     setRecording(false)
     
-    // If too short, cancel and show message
-    if (duration < MIN_DURATION) {
+    // If too short, cancel
+    if (duration < 300) {
       cancelRecording()
-      setError('Hold the button longer to record')
       return
     }
     
@@ -100,8 +96,9 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
       
       if (text.trim()) {
         setTopic(text)
-        // Automatically search after transcription
-        handleSearch(text)
+        if (autoSearch) {
+          handleSearch(text)
+        }
       } else {
         setError('Could not understand audio. Please try again.')
       }
@@ -113,25 +110,42 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
     }
   }, [handleSearch])
 
-  const handleMicLeave = useCallback(() => {
-    // If mouse leaves the button while recording, cancel
+  const handleMicClick = useCallback(async () => {
+    if (loading || transcribing) return
+    
+    // If already recording (toggle mode), stop
     if (recordingRef.current) {
-      recordingRef.current = false
-      setRecording(false)
-      cancelRecording()
+      isHoldMode.current = false
+      await stopRec(true)
+    } else {
+      // Start recording
+      isHoldMode.current = false
+      await startRec()
     }
+  }, [loading, transcribing, startRec, stopRec])
+
+  const handleMicDown = useCallback(() => {
+    // Mark as potentially hold mode
+    isHoldMode.current = true
   }, [])
 
-  // Touch handlers for mobile
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    e.preventDefault()
-    handleMicDown()
-  }, [handleMicDown])
+  const handleMicUp = useCallback(async () => {
+    // Only stop if we're in hold mode and have been recording for > 300ms
+    if (isHoldMode.current && recordingRef.current) {
+      const duration = Date.now() - recordStartTime.current
+      if (duration > 300) {
+        await stopRec(true)
+      }
+      // If < 300ms, it was a tap - let the click handler deal with toggle
+    }
+  }, [stopRec])
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    e.preventDefault()
-    handleMicUp()
-  }, [handleMicUp])
+  const handleMicLeave = useCallback(() => {
+    // If mouse leaves while in hold mode, stop recording
+    if (isHoldMode.current && recordingRef.current) {
+      stopRec(true)
+    }
+  }, [stopRec])
 
   return (
     <Card className="w-full">
@@ -195,18 +209,19 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
           // Show input
           <div className="space-y-4">
             <div className="flex gap-2">
-              {/* Voice button */}
+              {/* Voice button - tap to toggle or hold to record */}
               <Button
                 variant={recording ? "destructive" : "outline"}
                 size="icon"
                 disabled={loading || transcribing}
+                onClick={handleMicClick}
                 onMouseDown={handleMicDown}
                 onMouseUp={handleMicUp}
                 onMouseLeave={handleMicLeave}
-                onTouchStart={handleTouchStart}
-                onTouchEnd={handleTouchEnd}
+                onTouchStart={(e) => { e.preventDefault(); handleMicDown(); handleMicClick(); }}
+                onTouchEnd={(e) => { e.preventDefault(); handleMicUp(); }}
                 className={`shrink-0 ${recording ? 'animate-pulse' : ''}`}
-                title="Hold to speak"
+                title="Tap to start/stop or hold to record"
               >
                 {transcribing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -268,7 +283,7 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
             )}
 
             <p className="text-xs text-muted-foreground">
-              Hold the mic button to speak, or type your topic. The AI will explore your repository to find the best location.
+              Tap mic to start/stop recording, or hold to record. Type your topic if you prefer. The AI will explore your repository to find the best location.
             </p>
           </div>
         )}

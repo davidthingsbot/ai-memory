@@ -9,6 +9,7 @@ function App() {
   const [hasGitHub, setHasGitHub] = useState(false)
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
   const [topicResult, setTopicResult] = useState<TopicResult | null>(null)
+  const [contentKey, setContentKey] = useState(0) // Key to force reset ContentEditor
 
   const handleCredentialsChange = useCallback((openai: boolean, github: boolean) => {
     setHasOpenAI(openai)
@@ -17,17 +18,23 @@ function App() {
 
   const handleRepoChange = useCallback((repo: Repository | null) => {
     setSelectedRepo(repo)
-    // Reset topic when repo changes
+    // Reset topic and content when repo changes
     setTopicResult(null)
+    setContentKey(k => k + 1)
   }, [])
 
   const handleLocationFound = useCallback((result: TopicResult) => {
+    // If topic changed, reset content editor
+    if (topicResult && (topicResult.path !== result.path || topicResult.action !== result.action)) {
+      setContentKey(k => k + 1)
+    }
     setTopicResult(result)
-  }, [])
+  }, [topicResult])
 
   const handleContentComplete = useCallback(() => {
-    // Reset to topic selection for another entry
+    // Reset topic for another entry
     setTopicResult(null)
+    setContentKey(k => k + 1)
   }, [])
 
   const credentialsReady = hasOpenAI && hasGitHub
@@ -51,19 +58,19 @@ function App() {
             <RepoSelection onRepoChange={handleRepoChange} />
           )}
 
-          {/* Step 3: Topic / Location Finding */}
-          {selectedRepo && !topicResult && (
+          {/* Step 3: Topic / Location Finding - always visible once repo selected */}
+          {selectedRepo && (
             <TopicFinder 
               repoName={selectedRepo.full_name} 
               onLocationFound={handleLocationFound}
             />
           )}
 
-          {/* Step 4: Content Entry & Generation */}
+          {/* Step 4: Content Entry & Generation - visible once topic found */}
           {selectedRepo && topicResult && (
             <ContentEditor
+              key={contentKey}
               topicResult={topicResult}
-              repoName={selectedRepo.full_name}
               onComplete={handleContentComplete}
             />
           )}

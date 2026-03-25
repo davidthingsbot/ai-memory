@@ -26,6 +26,7 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
   const [transcribing, setTranscribing] = useState(false)
   const recordingRef = useRef(false)
   const recordStartTime = useRef(0)
+  const isHoldMode = useRef(false)
 
   // Preview stage
   const [stage, setStage] = useState<Stage>('input')
@@ -38,8 +39,8 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
   // Commit result
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
 
-  // Voice recording
-  const handleMicDown = useCallback(async () => {
+  // Voice recording - tap to toggle or hold to record
+  const startRec = useCallback(async () => {
     if (stage !== 'input' || transcribing) return
     try {
       setError(null)
@@ -52,16 +53,15 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
     }
   }, [stage, transcribing])
 
-  const handleMicUp = useCallback(async () => {
+  const stopRec = useCallback(async () => {
     if (!recordingRef.current) return
     
     const duration = Date.now() - recordStartTime.current
     recordingRef.current = false
     setRecording(false)
     
-    if (duration < 500) {
+    if (duration < 300) {
       cancelRecording()
-      setError('Hold longer to record')
       return
     }
     
@@ -81,13 +81,36 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
     }
   }, [])
 
-  const handleMicLeave = useCallback(() => {
+  const handleMicClick = useCallback(async () => {
+    if (stage !== 'input' || transcribing) return
+    
     if (recordingRef.current) {
-      recordingRef.current = false
-      setRecording(false)
-      cancelRecording()
+      isHoldMode.current = false
+      await stopRec()
+    } else {
+      isHoldMode.current = false
+      await startRec()
     }
+  }, [stage, transcribing, startRec, stopRec])
+
+  const handleMicDown = useCallback(() => {
+    isHoldMode.current = true
   }, [])
+
+  const handleMicUp = useCallback(async () => {
+    if (isHoldMode.current && recordingRef.current) {
+      const duration = Date.now() - recordStartTime.current
+      if (duration > 300) {
+        await stopRec()
+      }
+    }
+  }, [stopRec])
+
+  const handleMicLeave = useCallback(() => {
+    if (isHoldMode.current && recordingRef.current) {
+      stopRec()
+    }
+  }, [stopRec])
 
   // Generate content
   const handleGenerate = useCallback(async () => {
@@ -225,10 +248,11 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
               <Button
                 variant={recording ? "destructive" : "outline"}
                 size="sm"
+                onClick={handleMicClick}
                 onMouseDown={handleMicDown}
                 onMouseUp={handleMicUp}
                 onMouseLeave={handleMicLeave}
-                onTouchStart={(e) => { e.preventDefault(); handleMicDown() }}
+                onTouchStart={(e) => { e.preventDefault(); handleMicDown(); handleMicClick() }}
                 onTouchEnd={(e) => { e.preventDefault(); handleMicUp() }}
                 disabled={transcribing}
                 className={recording ? 'animate-pulse' : ''}
@@ -238,7 +262,7 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
                 ) : (
                   <Mic className={`h-4 w-4 mr-2 ${recording ? 'text-white' : ''}`} />
                 )}
-                {recording ? 'Recording...' : transcribing ? 'Transcribing...' : 'Hold to speak'}
+                {recording ? 'Tap to stop' : transcribing ? 'Transcribing...' : 'Tap or hold'}
               </Button>
 
               <Button
