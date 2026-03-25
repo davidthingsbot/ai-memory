@@ -1,5 +1,5 @@
 import { Octokit } from 'octokit'
-import { getGitHubPat } from '@/components/Credentials'
+import { getGitHubPat, getBraveKey } from '@/components/Credentials'
 import { getSelectedRepo } from '@/components/RepoSelection'
 
 export interface DirectoryEntry {
@@ -159,6 +159,35 @@ export async function getRepoTree(maxDepth: number = 3): Promise<DirectoryEntry[
   }
 }
 
+/**
+ * Search the web using Brave Search API
+ */
+export async function webSearch(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
+  const apiKey = getBraveKey()
+  if (!apiKey) {
+    throw new Error('Brave Search API key not configured')
+  }
+
+  const response = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`, {
+    headers: {
+      'Accept': 'application/json',
+      'X-Subscription-Token': apiKey,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Brave Search error: ${response.status}`)
+  }
+
+  const data = await response.json()
+  
+  return (data.web?.results || []).map((r: any) => ({
+    title: r.title,
+    url: r.url,
+    snippet: r.description,
+  }))
+}
+
 // Tool definitions for OpenAI function calling
 export const TOOL_DEFINITIONS = [
   {
@@ -224,6 +253,23 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'web_search',
+      description: 'Search the web for information using Brave Search. Use this to research topics, find supporting information, or verify facts. Returns titles, URLs, and snippets.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search query',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
 ]
 
 /**
@@ -277,6 +323,23 @@ export async function executeTool(
         const dirs = tree.filter(e => e.type === 'dir').map(e => `📁 ${e.path}`)
         const rootFiles = tree.filter(e => e.type === 'file' && !e.path.includes('/')).map(e => `📄 ${e.path}`)
         return `Repository structure:\n\nDirectories:\n${dirs.join('\n') || '(none)'}\n\nRoot files:\n${rootFiles.join('\n') || '(none)'}`
+      }
+
+      case 'web_search': {
+        try {
+          const results = await webSearch(args.query as string)
+          if (results.length === 0) {
+            return 'No results found.'
+          }
+          return results
+            .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`)
+            .join('\n\n')
+        } catch (err) {
+          if (err instanceof Error && err.message.includes('not configured')) {
+            return 'Web search not available (Brave API key not configured).'
+          }
+          throw err
+        }
       }
 
       default:

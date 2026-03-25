@@ -3,10 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Check, Eye, EyeOff, Key, GitBranch } from 'lucide-react'
+import { Check, Eye, EyeOff, Key, GitBranch, Search } from 'lucide-react'
 
 const STORAGE_KEY_OPENAI = 'ai-memory:openai-key'
 const STORAGE_KEY_GITHUB = 'ai-memory:github-pat'
+const STORAGE_KEY_BRAVE = 'ai-memory:brave-key'
 
 interface CredentialsProps {
   onCredentialsChange?: (hasOpenAI: boolean, hasGitHub: boolean) => void
@@ -15,19 +16,25 @@ interface CredentialsProps {
 export function Credentials({ onCredentialsChange }: CredentialsProps) {
   const [openaiKey, setOpenaiKey] = useState('')
   const [githubPat, setGithubPat] = useState('')
+  const [braveKey, setBraveKey] = useState('')
   const [hasStoredOpenAI, setHasStoredOpenAI] = useState(false)
   const [hasStoredGitHub, setHasStoredGitHub] = useState(false)
+  const [hasStoredBrave, setHasStoredBrave] = useState(false)
   const [showOpenAI, setShowOpenAI] = useState(false)
   const [showGitHub, setShowGitHub] = useState(false)
+  const [showBrave, setShowBrave] = useState(false)
   const [openaiSaved, setOpenaiSaved] = useState(false)
   const [githubSaved, setGithubSaved] = useState(false)
+  const [braveSaved, setBraveSaved] = useState(false)
 
   // Check for stored keys on mount
   useEffect(() => {
     const storedOpenAI = localStorage.getItem(STORAGE_KEY_OPENAI)
     const storedGitHub = localStorage.getItem(STORAGE_KEY_GITHUB)
+    const storedBrave = localStorage.getItem(STORAGE_KEY_BRAVE)
     setHasStoredOpenAI(!!storedOpenAI)
     setHasStoredGitHub(!!storedGitHub)
+    setHasStoredBrave(!!storedBrave)
     onCredentialsChange?.(!!storedOpenAI, !!storedGitHub)
   }, [onCredentialsChange])
 
@@ -53,6 +60,16 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
     }
   }
 
+  const saveBraveKey = () => {
+    if (braveKey.trim()) {
+      localStorage.setItem(STORAGE_KEY_BRAVE, braveKey.trim())
+      setHasStoredBrave(true)
+      setBraveKey('')
+      setBraveSaved(true)
+      setTimeout(() => setBraveSaved(false), 2000)
+    }
+  }
+
   const clearOpenAIKey = () => {
     localStorage.removeItem(STORAGE_KEY_OPENAI)
     setHasStoredOpenAI(false)
@@ -63,6 +80,11 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
     localStorage.removeItem(STORAGE_KEY_GITHUB)
     setHasStoredGitHub(false)
     onCredentialsChange?.(hasStoredOpenAI, false)
+  }
+
+  const clearBraveKey = () => {
+    localStorage.removeItem(STORAGE_KEY_BRAVE)
+    setHasStoredBrave(false)
   }
 
   return (
@@ -200,6 +222,70 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
             {' '}— needs <code className="text-xs">repo</code> scope
           </p>
         </div>
+
+        {/* Brave Search API Key */}
+        <div className="space-y-2">
+          <Label htmlFor="brave-key" className="flex items-center gap-2">
+            <Search className="h-4 w-4" />
+            Brave Search API Key
+            <span className="text-xs text-muted-foreground">(optional)</span>
+            {hasStoredBrave && (
+              <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                <Check className="h-3 w-3" /> Saved
+              </span>
+            )}
+          </Label>
+          
+          {hasStoredBrave ? (
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value="••••••••••••••••••••••••••••••••"
+                disabled
+                className="flex-1 font-mono"
+              />
+              <Button variant="outline" size="sm" onClick={clearBraveKey}>
+                Clear
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  id="brave-key"
+                  type={showBrave ? 'text' : 'password'}
+                  placeholder="BSA..."
+                  value={braveKey}
+                  onChange={(e) => setBraveKey(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && saveBraveKey()}
+                  className="pr-10 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowBrave(!showBrave)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showBrave ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <Button onClick={saveBraveKey} disabled={!braveKey.trim()}>
+                {braveSaved ? <Check className="h-4 w-4" /> : 'Save'}
+              </Button>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Enables web research. Get yours at{' '}
+            <a 
+              href="https://brave.com/search/api/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground"
+            >
+              brave.com/search/api
+            </a>
+            {' '}— free tier: 2,000 queries/month
+          </p>
+        </div>
       </CardContent>
     </Card>
   )
@@ -212,4 +298,8 @@ export function getOpenAIKey(): string | null {
 
 export function getGitHubPat(): string | null {
   return localStorage.getItem(STORAGE_KEY_GITHUB)
+}
+
+export function getBraveKey(): string | null {
+  return localStorage.getItem(STORAGE_KEY_BRAVE)
 }

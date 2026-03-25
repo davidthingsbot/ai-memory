@@ -76,6 +76,14 @@ export function RepoBrowser({ onScopeSelect }: RepoBrowserProps) {
   }
 
   const toggleDirectory = async (node: TreeNode) => {
+    setSelectedPath(node.path)
+    setFileContent(null)
+    
+    // Auto-set scope to this directory
+    const newScope: BrowseScope = { type: 'directory', path: node.path || '/' }
+    setScope(newScope)
+    onScopeSelect?.(newScope)
+    
     if (node.expanded) {
       // Collapse
       setTree(prev => collapseNode(prev, node.path))
@@ -119,6 +127,14 @@ export function RepoBrowser({ onScopeSelect }: RepoBrowserProps) {
       const file = await readFile(path)
       if (file) {
         setFileContent(file.content)
+        // Auto-set scope to this file
+        const newScope: BrowseScope = { 
+          type: 'file', 
+          path, 
+          fileContent: file.content 
+        }
+        setScope(newScope)
+        onScopeSelect?.(newScope)
       }
     } catch (err) {
       setError('Failed to load file')
