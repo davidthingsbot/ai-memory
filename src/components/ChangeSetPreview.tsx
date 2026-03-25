@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { 
   FilePlus, FileEdit, Trash2, ChevronDown, ChevronRight,
-  Check, X
+  Check, X, Eye, Code
 } from 'lucide-react'
+import { diffLines, type Change } from 'diff'
+import { MarkdownPreview } from './MarkdownPreview'
 import type { FileChange, ChangeSet } from '@/lib/changeset-generator'
 
 interface ChangeSetPreviewProps {
@@ -20,6 +22,7 @@ export function ChangeSetPreview({
   isCommitting = false 
 }: ChangeSetPreviewProps) {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
+  const [viewMode, setViewMode] = useState<Record<string, 'diff' | 'preview'>>({})
 
   const toggleExpanded = (path: string) => {
     setExpandedPaths(prev => {
@@ -31,6 +34,13 @@ export function ChangeSetPreview({
       }
       return next
     })
+  }
+
+  const toggleViewMode = (path: string) => {
+    setViewMode(prev => ({
+      ...prev,
+      [path]: prev[path] === 'preview' ? 'diff' : 'preview'
+    }))
   }
 
   const getActionIcon = (action: FileChange['action']) => {
@@ -64,6 +74,42 @@ export function ChangeSetPreview({
       case 'delete':
         return 'Delete'
     }
+  }
+
+  // Render unified diff
+  const renderDiff = (oldText: string, newText: string) => {
+    const changes = diffLines(oldText, newText)
+    
+    return (
+      <div className="font-mono text-xs overflow-x-auto bg-gray-900 rounded-md p-3">
+        {changes.map((change: Change, index: number) => {
+          const lines = change.value.split('\n').filter((line, i, arr) => 
+            // Keep all lines except trailing empty line
+            i < arr.length - 1 || line !== ''
+          )
+          
+          return lines.map((line, lineIndex) => {
+            let className = 'text-gray-300'
+            let prefix = ' '
+            
+            if (change.added) {
+              className = 'text-green-400 bg-green-950/50'
+              prefix = '+'
+            } else if (change.removed) {
+              className = 'text-red-400 bg-red-950/50'
+              prefix = '-'
+            }
+            
+            return (
+              <div key={`${index}-${lineIndex}`} className={`${className} whitespace-pre-wrap`}>
+                <span className="select-none opacity-50 mr-2">{prefix}</span>
+                {line || ' '}
+              </div>
+            )
+          })
+        })}
+      </div>
+    )
   }
 
   // Group changes by action
@@ -108,6 +154,8 @@ export function ChangeSetPreview({
       <div className="space-y-2">
         {changeSet.changes.map((change, index) => {
           const isExpanded = expandedPaths.has(change.path)
+          const mode = viewMode[change.path] || 'diff'
+          const isMarkdown = change.path.endsWith('.md') || change.path.endsWith('.mdx')
           
           return (
             <div 
@@ -139,47 +187,61 @@ export function ChangeSetPreview({
                       {change.reason}
                     </p>
                   )}
+
+                  {/* View mode toggle for markdown files */}
+                  {isMarkdown && change.action !== 'delete' && (
+                    <div className="flex justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); toggleViewMode(change.path) }}
+                        className="h-7 text-xs"
+                      >
+                        {mode === 'diff' ? (
+                          <><Eye className="h-3 w-3 mr-1" /> Preview</>
+                        ) : (
+                          <><Code className="h-3 w-3 mr-1" /> Diff</>
+                        )}
+                      </Button>
+                    </div>
+                  )}
                   
                   {change.action === 'delete' ? (
                     <div className="rounded border bg-red-100 dark:bg-red-950/50 p-2">
-                      <p className="text-xs text-red-700 dark:text-red-300">
+                      <p className="text-xs text-red-700 dark:text-red-300 mb-2">
                         This file will be deleted.
                       </p>
                       {change.previousContent && (
-                        <pre className="mt-2 text-xs text-red-600 dark:text-red-400 overflow-x-auto max-h-40 overflow-y-auto">
+                        <pre className="text-xs text-red-600 dark:text-red-400 overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap">
                           {change.previousContent.slice(0, 500)}
                           {change.previousContent.length > 500 && '...'}
                         </pre>
                       )}
                     </div>
                   ) : change.action === 'update' && change.previousContent ? (
-                    <div className="space-y-2">
-                      <div className="text-xs font-medium text-muted-foreground">Changes:</div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded border bg-red-50 dark:bg-red-950/30 p-2">
-                          <div className="font-medium text-red-700 dark:text-red-300 mb-1">Before</div>
-                          <pre className="text-red-600 dark:text-red-400 overflow-x-auto max-h-32 overflow-y-auto whitespace-pre-wrap">
-                            {change.previousContent.slice(0, 300)}
-                            {change.previousContent.length > 300 && '...'}
-                          </pre>
-                        </div>
-                        <div className="rounded border bg-green-50 dark:bg-green-950/30 p-2">
-                          <div className="font-medium text-green-700 dark:text-green-300 mb-1">After</div>
-                          <pre className="text-green-600 dark:text-green-400 overflow-x-auto max-h-32 overflow-y-auto whitespace-pre-wrap">
-                            {change.content?.slice(0, 300)}
-                            {(change.content?.length || 0) > 300 && '...'}
-                          </pre>
-                        </div>
+                    mode === 'preview' && isMarkdown ? (
+                      <div className="rounded border bg-background p-4 max-h-96 overflow-y-auto">
+                        <MarkdownPreview content={change.content || ''} />
                       </div>
-                    </div>
-                  ) : (
-                    <div className="rounded border bg-background p-2">
-                      <pre className="text-xs overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap">
-                        {change.content?.slice(0, 1000)}
-                        {(change.content?.length || 0) > 1000 && '...'}
-                      </pre>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="max-h-80 overflow-y-auto">
+                        {renderDiff(change.previousContent, change.content || '')}
+                      </div>
+                    )
+                  ) : change.action === 'create' ? (
+                    mode === 'preview' && isMarkdown ? (
+                      <div className="rounded border bg-background p-4 max-h-96 overflow-y-auto">
+                        <MarkdownPreview content={change.content || ''} />
+                      </div>
+                    ) : (
+                      <div className="rounded border bg-background p-3 max-h-80 overflow-y-auto">
+                        <pre className="text-xs whitespace-pre-wrap font-mono">
+                          {change.content?.slice(0, 2000)}
+                          {(change.content?.length || 0) > 2000 && '\n\n... (truncated)'}
+                        </pre>
+                      </div>
+                    )
+                  ) : null}
                 </div>
               )}
             </div>

@@ -92,15 +92,16 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     if (isRecording) {
       setError(null)
-      // Save current text and cursor position
-      contentBaseTextRef.current = rawContent
-      const cursorPos = contentTextareaRef.current?.selectionStart ?? rawContent.length
+      // Save current text and cursor position directly from DOM to avoid stale closure
+      const currentText = contentTextareaRef.current?.value ?? ''
+      const cursorPos = contentTextareaRef.current?.selectionStart ?? currentText.length
+      contentBaseTextRef.current = currentText
       contentInsertPosRef.current = cursorPos
       contentTranscription.startRecording(cursorPos)
     } else {
       contentTranscription.stopRecording()
     }
-  }, [stage, contentTranscription, rawContent])
+  }, [stage, contentTranscription])
 
   // Feedback voice recording handler
   const handleFeedbackRecordingChange = useCallback((isRecording: boolean) => {
@@ -108,9 +109,10 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     if (isRecording) {
       setError(null)
-      // Save current text and cursor position
-      feedbackBaseTextRef.current = feedback
-      const cursorPos = feedbackInputRef.current?.selectionStart ?? feedback.length
+      // Save current text and cursor position directly from DOM
+      const currentText = feedbackInputRef.current?.value ?? ''
+      const cursorPos = feedbackInputRef.current?.selectionStart ?? currentText.length
+      feedbackBaseTextRef.current = currentText
       feedbackInsertPosRef.current = cursorPos
       feedbackTranscription.startRecording(cursorPos)
     } else {
