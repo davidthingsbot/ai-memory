@@ -2,17 +2,16 @@ import { useState, useCallback, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { findTopicLocation, type TopicResult } from '@/lib/topic-finder'
-import { generateContent, reviseContent, type GeneratedContent } from '@/lib/content-generator'
-import { commitFile } from '@/lib/github-commit'
+import { generateChangeSet, reviseChangeSet, type ChangeSet } from '@/lib/changeset-generator'
+import { commitChangeSet } from '@/lib/github-commit'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { 
-  FileText, Sparkles, RotateCcw, Check, 
-  ExternalLink, MessageSquare, FilePlus, FileEdit, Search, Eye, Code
+  Sparkles, RotateCcw, Check, 
+  ExternalLink, MessageSquare, FileEdit
 } from 'lucide-react'
 import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
-import { MarkdownPreview } from './MarkdownPreview'
+import { ChangeSetPreview } from './ChangeSetPreview'
 import type { BrowseScope } from './RepoBrowser'
 
 interface ContentEditorProps {
@@ -21,36 +20,24 @@ interface ContentEditorProps {
   onComplete?: () => void
 }
 
-type Stage = 'input' | 'finding' | 'generating' | 'preview' | 'committing' | 'done'
+type Stage = 'input' | 'generating' | 'preview' | 'committing' | 'done'
 
 export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProps) {
   // Input stage
   const [rawContent, setRawContent] = useState('')
 
-  // Location finding result (resolved from scope or found by AI)
-  const [topicResult, setTopicResult] = useState<TopicResult | null>(null)
-
-  // Preview stage
-  const [stage, setStage] = useState<Stage>('input')
-  const [generated, setGenerated] = useState<GeneratedContent | null>(null)
-  const [editedMarkdown, setEditedMarkdown] = useState('')
+  // Changeset result
+  const [changeSet, setChangeSet] = useState<ChangeSet | null>(null)
   const [feedback, setFeedback] = useState('')
+  
+  // UI state
+  const [stage, setStage] = useState<Stage>('input')
   const [steps, setSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
   // Commit result
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
-
-  // Preview mode toggle
-  const [showRaw, setShowRaw] = useState(false)
-
-  // Determine if we need to find location or can proceed directly
-  const needsLocationFinding = !scope || scope.type === 'directory'
-  
-  // For file/selection scope, we know the path immediately
-  const resolvedPath = scope?.type === 'file' || scope?.type === 'selection' 
-    ? scope.path 
-    : null
+  const [filesChanged, setFilesChanged] = useState(0)
 
   // Real-time transcription for content input
   const contentTranscription = useRealtimeTranscription({
@@ -109,108 +96,66 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setSteps(prev => [...prev, step])
   }, [])
 
-  // Main action: find location (if needed) then generate
+  // Main action: generate changeset
   const handleGenerate = useCallback(async () => {
     if (!rawContent.trim()) return
     
     setError(null)
     setSteps([])
-
-    let effectiveTopicResult: TopicResult
-
-    // If we need to find location first
-    if (needsLocationFinding) {
-      setStage('finding')
-      
-      try {
-        addStep('Finding best location for this content...')
-        const location = await findTopicLocation(rawContent, addStep, scope)
-        addStep('Location found: ' + location.path)
-        effectiveTopicResult = location
-        setTopicResult(location)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Location finding failed')
-        setStage('input')
-        return
-      }
-    } else {
-      // Resolve directly from scope
-      effectiveTopicResult = {
-        action: 'update',
-        path: resolvedPath!,
-        reason: scope?.type === 'selection' 
-          ? 'Updating file based on selected passage'
-          : 'Updating selected file',
-        existingContent: scope?.fileContent,
-      }
-      setTopicResult(effectiveTopicResult)
-    }
-
-    // Now generate content
     setStage('generating')
     
     try {
-      const result = await generateContent({
-        topicResult: effectiveTopicResult,
+      const result = await generateChangeSet({
         rawContent,
+        scope,
         selectionContext: scope?.type === 'selection' ? scope.selectedText : undefined,
       }, addStep)
       
-      addStep('Content generated')
-      setGenerated(result)
-      setEditedMarkdown(result.markdown)
+      addStep(`Generated ${result.changes.length} change(s)`)
+      setChangeSet(result)
       setStage('preview')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')
       setStage('input')
     }
-  }, [rawContent, needsLocationFinding, scope, resolvedPath, addStep])
+  }, [rawContent, scope, addStep])
 
-  // Revise content
+  // Revise changeset based on feedback
   const handleRevise = useCallback(async () => {
-    if (!feedback.trim() || !editedMarkdown || !topicResult) return
+    if (!feedback.trim() || !changeSet) return
     
     setStage('generating')
     setError(null)
     setSteps([])
 
     try {
-      const result = await reviseContent(
-        editedMarkdown,
-        feedback,
-        topicResult,
-        addStep
-      )
+      const result = await reviseChangeSet(changeSet, feedback, addStep)
       
       addStep('Revision complete')
-      setGenerated(result)
-      setEditedMarkdown(result.markdown)
+      setChangeSet(result)
       setFeedback('')
       setStage('preview')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Revision failed')
       setStage('preview')
     }
-  }, [feedback, editedMarkdown, topicResult, addStep])
+  }, [feedback, changeSet, addStep])
 
-  // Commit to GitHub
+  // Commit changeset to GitHub
   const handleCommit = useCallback(async () => {
-    if (!editedMarkdown || !generated || !topicResult) return
+    if (!changeSet) return
     
     setStage('committing')
     setError(null)
-    setSteps(['Committing to GitHub...'])
+    setSteps(['Committing changes to GitHub...'])
 
     try {
-      const result = await commitFile(
-        topicResult.path,
-        editedMarkdown,
-        generated.commitMessage
-      )
+      const result = await commitChangeSet(changeSet)
       
       if (result.success) {
-        addStep('Committed successfully')
+        addStep(`Committed ${result.filesChanged} file(s)`)
         setCommitUrl(result.url || null)
+        setFilesChanged(result.filesChanged)
         setStage('done')
       } else {
         throw new Error(result.error || 'Commit failed')
@@ -219,17 +164,16 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       setError(err instanceof Error ? err.message : 'Commit failed')
       setStage('preview')
     }
-  }, [editedMarkdown, generated, topicResult, addStep])
+  }, [changeSet, addStep])
 
   // Reset to start new entry
   const handleReset = useCallback(() => {
     setRawContent('')
-    setTopicResult(null)
-    setGenerated(null)
-    setEditedMarkdown('')
+    setChangeSet(null)
     setFeedback('')
     setError(null)
     setCommitUrl(null)
+    setFilesChanged(0)
     setSteps([])
     setStage('input')
     onComplete?.()
@@ -238,9 +182,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   // Back to editing input
   const handleBackToInput = useCallback(() => {
     setStage('input')
-    setTopicResult(null)
-    setGenerated(null)
-    setEditedMarkdown('')
+    setChangeSet(null)
     setSteps([])
   }, [])
 
@@ -259,21 +201,19 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         <CardTitle className="flex items-center gap-2">
           {stage === 'done' ? (
             <Check className="h-5 w-5 text-green-600" />
-          ) : topicResult?.action === 'create' ? (
-            <FilePlus className="h-5 w-5" />
           ) : (
             <FileEdit className="h-5 w-5" />
           )}
           Content
           {stage === 'done' && (
             <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 ml-2">
-              Committed
+              {filesChanged} file{filesChanged !== 1 ? 's' : ''} committed
             </span>
           )}
         </CardTitle>
         <CardDescription>
-          {topicResult 
-            ? <>{topicResult.action === 'create' ? 'Creating' : 'Updating'} <code className="text-xs">{topicResult.path}</code></>
+          {changeSet 
+            ? changeSet.summary
             : contextDescription
           }
         </CardDescription>
@@ -320,17 +260,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                 onClick={handleGenerate}
                 disabled={!rawContent.trim() || contentTranscription.isRecording || contentTranscription.isConnecting}
               >
-                {needsLocationFinding ? (
-                  <>
-                    <Search className="h-4 w-4 mr-2" />
-                    Find & Generate
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Generate
-                  </>
-                )}
+                <Sparkles className="h-4 w-4 mr-2" />
+                Generate
               </Button>
             </div>
 
@@ -356,14 +287,6 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           </>
         )}
 
-        {/* Stage: Finding location */}
-        {stage === 'finding' && (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Finding the best location for your content...</p>
-            <WorkingBox steps={steps} isWorking={true} />
-          </div>
-        )}
-
         {/* Stage: Generating */}
         {stage === 'generating' && (
           <div className="space-y-4">
@@ -371,66 +294,21 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           </div>
         )}
 
-        {/* Stage: Preview */}
-        {stage === 'preview' && topicResult && (
+        {/* Stage: Preview - Show changeset */}
+        {stage === 'preview' && changeSet && (
           <>
-            {/* Show analysis info for updates */}
-            {generated?.strategy && (
-              <div className="rounded-lg border bg-blue-50 dark:bg-blue-950/20 p-3 text-sm space-y-1">
-                <p className="font-medium text-blue-800 dark:text-blue-200">
-                  {generated.strategy === 'expand_section' && 'Expanding existing section'}
-                  {generated.strategy === 'new_section' && 'Creating new section'}
-                  {generated.strategy === 'inline_addition' && 'Adding inline content'}
-                </p>
-                {generated.location && (
-                  <p className="text-blue-700 dark:text-blue-300">
-                    Location: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{generated.location}</code>
-                  </p>
-                )}
-                {generated.analysis && (
-                  <p className="text-blue-600 dark:text-blue-400 text-xs">{generated.analysis}</p>
-                )}
-              </div>
-            )}
+            <ChangeSetPreview
+              changeSet={changeSet}
+              onAccept={handleCommit}
+              onCancel={handleBackToInput}
+              isCommitting={false}
+            />
 
-            {/* Preview/Edit toggle */}
-            <div className="border rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/50">
-                <span className="text-sm font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  {showRaw ? 'Edit' : 'Preview'}
-                </span>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setShowRaw(!showRaw)}
-                  title={showRaw ? 'Show rendered preview' : 'Edit raw markdown'}
-                >
-                  {showRaw ? <Eye className="h-4 w-4" /> : <Code className="h-4 w-4" />}
-                  <span className="ml-1 text-xs">{showRaw ? 'Preview' : 'Edit'}</span>
-                </Button>
-              </div>
-              
-              {showRaw ? (
-                <textarea
-                  className="w-full min-h-[300px] p-4 bg-background resize-y text-sm font-mono border-0 focus:ring-0 focus:outline-none"
-                  value={editedMarkdown}
-                  onChange={(e) => setEditedMarkdown(e.target.value)}
-                />
-              ) : (
-                <div className="p-4 max-h-[400px] overflow-y-auto bg-background">
-                  <MarkdownPreview 
-                    content={editedMarkdown}
-                    basePath={topicResult.path.split('/').slice(0, -1).join('/')}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
+            {/* Feedback section */}
+            <div className="space-y-2 pt-4 border-t">
               <label className="text-sm font-medium flex items-center gap-2">
                 <MessageSquare className="h-4 w-4" />
-                Feedback (optional)
+                Revise (optional)
               </label>
               <div className="flex gap-2">
                 <MicButton
@@ -440,7 +318,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   className="shrink-0"
                 />
                 <Input
-                  placeholder="e.g., Add more detail about timing"
+                  placeholder="e.g., Also add a section about..."
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && feedback.trim() && handleRevise()}
@@ -458,16 +336,6 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
-
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" onClick={handleBackToInput}>
-                Back
-              </Button>
-              <Button onClick={handleCommit} className="flex-1">
-                <Check className="h-4 w-4 mr-2" />
-                Accept & Commit
-              </Button>
-            </div>
           </>
         )}
 
@@ -479,14 +347,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         )}
 
         {/* Stage: Done */}
-        {stage === 'done' && topicResult && (
+        {stage === 'done' && (
           <div className="space-y-4">
             <div className="rounded-lg border bg-green-50 dark:bg-green-950/20 p-4 text-center">
               <Check className="h-8 w-8 mx-auto text-green-600 dark:text-green-400 mb-2" />
               <p className="font-medium">Successfully committed!</p>
               <p className="text-sm text-muted-foreground mt-1">
-                {topicResult.action === 'create' ? 'Created' : 'Updated'}{' '}
-                <code className="text-xs">{topicResult.path}</code>
+                {filesChanged} file{filesChanged !== 1 ? 's' : ''} changed
               </p>
               {commitUrl && (
                 <a
