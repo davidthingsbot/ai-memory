@@ -146,6 +146,8 @@ Guidelines:
 - Use rename when a file/folder should be moved or given a better name
 - Provide clear markdown formatting
 - Use plain ASCII quotes (" and ') only - never use curly/smart quotes (" " ' ')
+- If referencing images, place them in an images/ subdirectory relative to the document (e.g., images/diagram.png)
+- Use relative paths for images in markdown: ![description](images/filename.png)
 
 You MUST respond with a JSON object in this exact format:
 {

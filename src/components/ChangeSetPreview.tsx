@@ -261,7 +261,7 @@ export function ChangeSetPreview({
                       {change.content && change.previousContent && change.content !== change.previousContent ? (
                         mode === 'preview' && isMarkdown ? (
                           <div className="rounded border bg-background p-4 max-h-96 overflow-y-auto">
-                            <MarkdownPreview content={change.content} />
+                            <MarkdownPreview content={change.content} basePath={change.path.split("/").slice(0, -1).join("/")} />
                           </div>
                         ) : (
                           <div className="max-h-80 overflow-y-auto">
@@ -271,7 +271,7 @@ export function ChangeSetPreview({
                       ) : change.content ? (
                         mode === 'preview' && isMarkdown ? (
                           <div className="rounded border bg-background p-4 max-h-96 overflow-y-auto">
-                            <MarkdownPreview content={change.content} />
+                            <MarkdownPreview content={change.content} basePath={change.path.split("/").slice(0, -1).join("/")} />
                           </div>
                         ) : (
                           <div className="rounded border bg-background p-3 max-h-40 overflow-y-auto">
@@ -286,7 +286,7 @@ export function ChangeSetPreview({
                   ) : change.action === 'update' && change.previousContent ? (
                     mode === 'preview' && isMarkdown ? (
                       <div className="rounded border bg-background p-4 max-h-96 overflow-y-auto">
-                        <MarkdownPreview content={change.content || ''} />
+                        <MarkdownPreview content={change.content || ''} basePath={change.path.split('/').slice(0, -1).join('/')} />
                       </div>
                     ) : (
                       <div className="max-h-80 overflow-y-auto">
@@ -296,7 +296,7 @@ export function ChangeSetPreview({
                   ) : change.action === 'create' ? (
                     mode === 'preview' && isMarkdown ? (
                       <div className="rounded border bg-background p-4 max-h-96 overflow-y-auto">
-                        <MarkdownPreview content={change.content || ''} />
+                        <MarkdownPreview content={change.content || ''} basePath={change.path.split('/').slice(0, -1).join('/')} />
                       </div>
                     ) : (
                       <div className="rounded border bg-background p-3 max-h-80 overflow-y-auto">
