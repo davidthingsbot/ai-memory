@@ -65,12 +65,13 @@ export function createTranscriptionSession(
       ws.onopen = async () => {
         connected = true
 
-        // Configure session for transcription only (no audio output)
+        // Configure session for transcription
         ws?.send(JSON.stringify({
           type: 'session.update',
           session: {
             type: 'realtime',
-            modalities: ['text'], // Text only - no audio output
+            instructions: 'Transcribe speech only. Do not respond.',
+            tools: [],
             audio: {
               input: {
                 format: { type: 'audio/pcm', rate: 24000 },
@@ -81,6 +82,10 @@ export function createTranscriptionSession(
                   prefix_padding_ms: 300,
                   silence_duration_ms: 500,
                 },
+              },
+              output: {
+                format: { type: 'audio/pcm', rate: 24000 },
+                voice: 'alloy',
               },
             },
           },
