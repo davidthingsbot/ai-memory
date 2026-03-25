@@ -130,6 +130,107 @@ The AI:
 
 ---
 
+## Voice Interface
+
+Voice is a first-class input method. Two modes are supported, both using the same OpenAI API key.
+
+### Mode 1: Turn-Taking (Pipeline)
+
+Traditional request-response: you speak, AI responds, you speak again.
+
+```
+User speaks → STT → text → LLM → text → TTS → AI speaks
+```
+
+**Architecture:**
+- **STT:** OpenAI Whisper (`gpt-4o-mini-transcribe`) or Deepgram
+- **LLM:** GPT-4o-mini or similar (chat completions API)
+- **TTS:** OpenAI TTS (`gpt-4o-mini-tts`) or ElevenLabs
+
+**Pros:** Flexible (swap providers), inspectable (text in the middle), works with any LLM.
+**Cons:** Higher latency (~1-2s), loses prosody between stages.
+
+**Best for:** Form-filling steps (repo selection, scope, topic) where you want clear turn boundaries.
+
+### Mode 2: Conversational (Realtime API)
+
+Continuous bidirectional speech via OpenAI Realtime API. Native speech-to-speech with no intermediate text conversion.
+
+```
+User speaks ←──── WebSocket ────→ AI speaks
+         (PCM audio both directions)
+```
+
+**Architecture:**
+- Single WebSocket connection to `wss://api.openai.com/v1/realtime`
+- Audio streamed as PCM16 at 24kHz
+- Semantic VAD detects when you've finished speaking (not just silence)
+- Barge-in supported: interrupt the AI mid-response
+
+**Pros:** Sub-second latency, preserves prosody, natural conversation flow.
+**Cons:** OpenAI-only, harder to debug (no text in the middle).
+
+**Best for:** The rambling content capture step where you're thinking out loud.
+
+### Implementation Source
+
+Working implementations exist in the [whiteboard](https://github.com/davidthingsbot/whiteboard) project:
+
+```
+whiteboard/implementation/studies/inf-canvas/
+├── src/items/
+│   ├── VoiceAgent.jsx           ← Turn-taking (pipeline mode)
+│   ├── ConversationAgent.jsx    ← Continuous (Realtime API)
+│   └── lib/
+│       ├── audio-capture.js     ← Mic capture + resampling
+│       ├── audio-playback.js    ← Gapless audio queue
+│       ├── pcm-audio.js         ← PCM16 ↔ Float32 conversion
+│       ├── realtime-session.js  ← WebSocket lifecycle for Realtime API
+│       ├── stt-providers.js     ← Whisper, Deepgram adapters
+│       └── tts-providers.js     ← OpenAI TTS, ElevenLabs adapters
+└── doc/items/
+    ├── voice-agent.md           ← Pipeline architecture docs
+    └── conversation-agent.md    ← Realtime API architecture docs
+```
+
+### Integration Steps
+
+1. **Copy shared libraries** from `whiteboard/inf-canvas/src/items/lib/`:
+   - `audio-capture.js`, `audio-playback.js`, `pcm-audio.js`
+   - `realtime-session.js` (for conversational mode)
+   - `stt-providers.js`, `tts-providers.js` (for pipeline mode)
+
+2. **Copy UI components**:
+   - `TranscriptPanel.jsx` — scrolling message list
+   - `InputBar.jsx` — text + mic input with mode toggle
+
+3. **For Realtime API** (conversational mode):
+   - Need a server endpoint to proxy ephemeral token requests
+   - Browser calls `POST /api/realtime/session`
+   - Server calls `POST https://api.openai.com/v1/realtime/client_secrets`
+   - Returns `{ value, expires_at }` ephemeral token
+   - Browser opens WebSocket with token in subprotocol
+
+4. **For pipeline mode** (turn-taking):
+   - Direct browser → OpenAI calls work fine
+   - No server proxy needed (API key in localStorage)
+
+### Audio Pipeline Details
+
+**Capture (browser → API):**
+```
+Mic (48kHz Float32) → downsample to 24kHz → PCM16 → base64 → WebSocket
+```
+
+**Playback (API → browser):**
+```
+WebSocket → base64 → PCM16 → Float32 → AudioBuffer → speaker
+```
+
+**Critical:** AudioContext must use browser's native sample rate (usually 48kHz). Forcing 24kHz causes silent buffers in Chrome. Use `downsample()` to convert to the API's 24kHz rate.
+
+---
+
 ## Technical Stack
 
 - **Vite** + **React 19** + **TypeScript**
@@ -225,11 +326,13 @@ Dev server: http://localhost:3075 (also accessible on LAN)
 | Component | Status |
 |-----------|--------|
 | Project scaffold | ✅ Done |
+| Voice interface design | ✅ Done (port from whiteboard) |
 | Credentials UI | 🔲 Todo |
 | Repository selection | 🔲 Todo |
 | Scope selection | 🔲 Todo |
 | Topic matching | 🔲 Todo |
-| Voice input | 🔲 Todo |
+| Voice input (pipeline) | 🔲 Todo — port `VoiceAgent` |
+| Voice input (realtime) | 🔲 Todo — port `ConversationAgent` |
 | Content capture | 🔲 Todo |
 | AI processing | 🔲 Todo |
 | Result preview | 🔲 Todo |
