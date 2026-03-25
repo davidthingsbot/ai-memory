@@ -3,13 +3,13 @@ import { Octokit } from 'octokit'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getGitHubPat } from '@/components/Credentials'
-import { FolderGit2, Check, RefreshCw, Search, Lock, Globe } from 'lucide-react'
+import { getGitHubTokens } from '@/components/Credentials'
+import { FolderGit2, Check, RefreshCw, Search, Lock, Globe, User } from 'lucide-react'
 import { clearContext, prefetchRepoStructure } from '@/lib/topic-finder'
 
 const STORAGE_KEY_REPO = 'ai-memory:selected-repo'
 
-interface Repository {
+export interface Repository {
   id: number
   full_name: string
   name: string
@@ -17,6 +17,9 @@ interface Repository {
   private: boolean
   description: string | null
   default_branch: string
+  // Track which token provides access
+  _tokenLabel?: string
+  _tokenIndex?: number
 }
 
 interface RepoSelectionProps {
@@ -29,6 +32,7 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
   const [error, setError] = useState<string | null>(null)
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
   const [filter, setFilter] = useState('')
+  const [tokenErrors, setTokenErrors] = useState<string[]>([])
 
   // Load saved repo on mount
   useEffect(() => {
@@ -45,47 +49,77 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
   }, [onRepoChange])
 
   const fetchRepos = useCallback(async () => {
-    const token = getGitHubPat()
-    if (!token) {
-      setError('No GitHub token found')
+    const tokens = getGitHubTokens()
+    if (tokens.length === 0) {
+      setError('No GitHub tokens found')
       return
     }
 
     setLoading(true)
     setError(null)
+    setTokenErrors([])
 
-    try {
-      const octokit = new Octokit({ auth: token })
-      
-      // Fetch repos the token has access to
-      // This works for both classic PATs (all repos) and fine-grained (specific repos)
-      const response = await octokit.rest.repos.listForAuthenticatedUser({
-        sort: 'updated',
-        per_page: 100,
-        type: 'all'
-      })
+    const allRepos: Repository[] = []
+    const seenRepoIds = new Set<number>()
+    const errors: string[] = []
 
-      setRepos(response.data as Repository[])
-      
-      if (response.data.length === 0) {
+    // Query each token
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i]
+      try {
+        const octokit = new Octokit({ auth: token.token })
+        
+        const response = await octokit.rest.repos.listForAuthenticatedUser({
+          sort: 'updated',
+          per_page: 100,
+          type: 'all'
+        })
+
+        // Add repos with token tracking, deduping by ID
+        for (const repo of response.data) {
+          if (!seenRepoIds.has(repo.id)) {
+            seenRepoIds.add(repo.id)
+            allRepos.push({
+              ...repo as Repository,
+              _tokenLabel: token.label,
+              _tokenIndex: i,
+            })
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to fetch repos for token "${token.label}":`, err)
+        if (err instanceof Error) {
+          if (err.message.includes('401')) {
+            errors.push(`${token.label}: Invalid or expired token`)
+          } else if (err.message.includes('403')) {
+            errors.push(`${token.label}: Token lacks repo permissions`)
+          } else {
+            errors.push(`${token.label}: ${err.message}`)
+          }
+        } else {
+          errors.push(`${token.label}: Unknown error`)
+        }
+      }
+    }
+
+    // Sort by most recently updated
+    allRepos.sort((a, b) => {
+      // Repos might not have pushed_at, fall back to alphabetical
+      return a.full_name.localeCompare(b.full_name)
+    })
+
+    setRepos(allRepos)
+    setTokenErrors(errors)
+
+    if (allRepos.length === 0) {
+      if (errors.length > 0) {
+        setError('Failed to fetch repositories from all tokens')
+      } else {
         setError('No repositories found. Check your token permissions.')
       }
-    } catch (err) {
-      console.error('Failed to fetch repos:', err)
-      if (err instanceof Error) {
-        if (err.message.includes('401')) {
-          setError('Invalid or expired token. Please update your GitHub PAT.')
-        } else if (err.message.includes('403')) {
-          setError('Token lacks permission to list repositories.')
-        } else {
-          setError(`Failed to fetch repositories: ${err.message}`)
-        }
-      } else {
-        setError('Failed to fetch repositories')
-      }
-    } finally {
-      setLoading(false)
     }
+
+    setLoading(false)
   }, [])
 
   // Fetch repos on mount
@@ -116,6 +150,9 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
     (repo.description?.toLowerCase().includes(filter.toLowerCase()) ?? false)
   )
 
+  // Group repos by token for display
+  const tokens = getGitHubTokens()
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -130,6 +167,7 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
         </CardTitle>
         <CardDescription>
           Choose which repository to store your memories in.
+          {tokens.length > 1 && ` Searching ${tokens.length} accounts.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -147,6 +185,11 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
                 {selectedRepo.description && (
                   <p className="text-sm text-muted-foreground truncate">
                     {selectedRepo.description}
+                  </p>
+                )}
+                {selectedRepo._tokenLabel && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                    <User className="h-3 w-3" /> via {selectedRepo._tokenLabel}
                   </p>
                 )}
               </div>
@@ -179,6 +222,15 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
               </Button>
             </div>
 
+            {/* Token errors */}
+            {tokenErrors.length > 0 && (
+              <div className="text-xs text-amber-600 dark:text-amber-400 space-y-1">
+                {tokenErrors.map((err, i) => (
+                  <p key={i}>⚠️ {err}</p>
+                ))}
+              </div>
+            )}
+
             {/* Error message */}
             {error && (
               <p className="text-sm text-destructive">{error}</p>
@@ -204,11 +256,18 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{repo.full_name}</p>
-                      {repo.description && (
-                        <p className="text-sm text-muted-foreground truncate">
-                          {repo.description}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {repo.description && (
+                          <p className="text-sm text-muted-foreground truncate flex-1">
+                            {repo.description}
+                          </p>
+                        )}
+                        {tokens.length > 1 && repo._tokenLabel && (
+                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
+                            {repo._tokenLabel}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 ))}
@@ -223,6 +282,7 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
             {repos.length > 0 && (
               <p className="text-xs text-muted-foreground">
                 {filteredRepos.length} of {repos.length} repositories
+                {tokens.length > 1 && ` from ${tokens.length} accounts`}
               </p>
             )}
           </div>
@@ -243,4 +303,22 @@ export function getSelectedRepo(): Repository | null {
   }
 }
 
-export type { Repository }
+// Get the token for the selected repo
+export function getSelectedRepoToken(): string | null {
+  const repo = getSelectedRepo()
+  if (!repo) return null
+  
+  const tokens = getGitHubTokens()
+  if (repo._tokenIndex !== undefined && tokens[repo._tokenIndex]) {
+    return tokens[repo._tokenIndex].token
+  }
+  
+  // Fallback: try to find by label
+  if (repo._tokenLabel) {
+    const token = tokens.find(t => t.label === repo._tokenLabel)
+    if (token) return token.token
+  }
+  
+  // Last resort: return first token
+  return tokens.length > 0 ? tokens[0].token : null
+}

@@ -3,11 +3,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Check, Eye, EyeOff, Key, GitBranch, Search } from 'lucide-react'
+import { Check, Eye, EyeOff, Key, GitBranch, Search, Plus, Trash2 } from 'lucide-react'
 
 const STORAGE_KEY_OPENAI = 'ai-memory:openai-key'
-const STORAGE_KEY_GITHUB = 'ai-memory:github-pat'
+const STORAGE_KEY_GITHUB_TOKENS = 'ai-memory:github-tokens'
 const STORAGE_KEY_BRAVE = 'ai-memory:brave-key'
+
+// Legacy key for migration
+const STORAGE_KEY_GITHUB_LEGACY = 'ai-memory:github-pat'
+
+export interface GitHubToken {
+  label: string
+  token: string
+}
 
 interface CredentialsProps {
   onCredentialsChange?: (hasOpenAI: boolean, hasGitHub: boolean) => void
@@ -15,27 +23,49 @@ interface CredentialsProps {
 
 export function Credentials({ onCredentialsChange }: CredentialsProps) {
   const [openaiKey, setOpenaiKey] = useState('')
-  const [githubPat, setGithubPat] = useState('')
   const [braveKey, setBraveKey] = useState('')
   const [hasStoredOpenAI, setHasStoredOpenAI] = useState(false)
-  const [hasStoredGitHub, setHasStoredGitHub] = useState(false)
   const [hasStoredBrave, setHasStoredBrave] = useState(false)
   const [showOpenAI, setShowOpenAI] = useState(false)
-  const [showGitHub, setShowGitHub] = useState(false)
   const [showBrave, setShowBrave] = useState(false)
   const [openaiSaved, setOpenaiSaved] = useState(false)
-  const [githubSaved, setGithubSaved] = useState(false)
   const [braveSaved, setBraveSaved] = useState(false)
 
-  // Check for stored keys on mount
+  // GitHub tokens (multiple)
+  const [githubTokens, setGithubTokens] = useState<GitHubToken[]>([])
+  const [newTokenLabel, setNewTokenLabel] = useState('')
+  const [newTokenValue, setNewTokenValue] = useState('')
+  const [showNewToken, setShowNewToken] = useState(false)
+  const [tokenSaved, setTokenSaved] = useState(false)
+
+  // Load stored credentials on mount
   useEffect(() => {
     const storedOpenAI = localStorage.getItem(STORAGE_KEY_OPENAI)
-    const storedGitHub = localStorage.getItem(STORAGE_KEY_GITHUB)
     const storedBrave = localStorage.getItem(STORAGE_KEY_BRAVE)
+    
+    // Load GitHub tokens (with migration from legacy single token)
+    let tokens: GitHubToken[] = []
+    const storedTokens = localStorage.getItem(STORAGE_KEY_GITHUB_TOKENS)
+    if (storedTokens) {
+      try {
+        tokens = JSON.parse(storedTokens)
+      } catch {
+        tokens = []
+      }
+    } else {
+      // Migrate legacy single token
+      const legacyToken = localStorage.getItem(STORAGE_KEY_GITHUB_LEGACY)
+      if (legacyToken) {
+        tokens = [{ label: 'Default', token: legacyToken }]
+        localStorage.setItem(STORAGE_KEY_GITHUB_TOKENS, JSON.stringify(tokens))
+        localStorage.removeItem(STORAGE_KEY_GITHUB_LEGACY)
+      }
+    }
+    
     setHasStoredOpenAI(!!storedOpenAI)
-    setHasStoredGitHub(!!storedGitHub)
     setHasStoredBrave(!!storedBrave)
-    onCredentialsChange?.(!!storedOpenAI, !!storedGitHub)
+    setGithubTokens(tokens)
+    onCredentialsChange?.(!!storedOpenAI, tokens.length > 0)
   }, [onCredentialsChange])
 
   const saveOpenAIKey = () => {
@@ -45,19 +75,29 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
       setOpenaiKey('')
       setOpenaiSaved(true)
       setTimeout(() => setOpenaiSaved(false), 2000)
-      onCredentialsChange?.(true, hasStoredGitHub)
+      onCredentialsChange?.(true, githubTokens.length > 0)
     }
   }
 
-  const saveGitHubPat = () => {
-    if (githubPat.trim()) {
-      localStorage.setItem(STORAGE_KEY_GITHUB, githubPat.trim())
-      setHasStoredGitHub(true)
-      setGithubPat('')
-      setGithubSaved(true)
-      setTimeout(() => setGithubSaved(false), 2000)
+  const addGitHubToken = () => {
+    if (newTokenValue.trim()) {
+      const label = newTokenLabel.trim() || `Token ${githubTokens.length + 1}`
+      const newTokens = [...githubTokens, { label, token: newTokenValue.trim() }]
+      setGithubTokens(newTokens)
+      localStorage.setItem(STORAGE_KEY_GITHUB_TOKENS, JSON.stringify(newTokens))
+      setNewTokenLabel('')
+      setNewTokenValue('')
+      setTokenSaved(true)
+      setTimeout(() => setTokenSaved(false), 2000)
       onCredentialsChange?.(hasStoredOpenAI, true)
     }
+  }
+
+  const removeGitHubToken = (index: number) => {
+    const newTokens = githubTokens.filter((_, i) => i !== index)
+    setGithubTokens(newTokens)
+    localStorage.setItem(STORAGE_KEY_GITHUB_TOKENS, JSON.stringify(newTokens))
+    onCredentialsChange?.(hasStoredOpenAI, newTokens.length > 0)
   }
 
   const saveBraveKey = () => {
@@ -73,13 +113,7 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
   const clearOpenAIKey = () => {
     localStorage.removeItem(STORAGE_KEY_OPENAI)
     setHasStoredOpenAI(false)
-    onCredentialsChange?.(false, hasStoredGitHub)
-  }
-
-  const clearGitHubPat = () => {
-    localStorage.removeItem(STORAGE_KEY_GITHUB)
-    setHasStoredGitHub(false)
-    onCredentialsChange?.(hasStoredOpenAI, false)
+    onCredentialsChange?.(false, githubTokens.length > 0)
   }
 
   const clearBraveKey = () => {
@@ -160,55 +194,70 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
           </p>
         </div>
 
-        {/* GitHub PAT */}
+        {/* GitHub PATs (Multiple) */}
         <div className="space-y-2">
-          <Label htmlFor="github-pat" className="flex items-center gap-2">
+          <Label className="flex items-center gap-2">
             <GitBranch className="h-4 w-4" />
-            GitHub Personal Access Token
-            {hasStoredGitHub && (
+            GitHub Personal Access Tokens
+            {githubTokens.length > 0 && (
               <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                <Check className="h-3 w-3" /> Saved
+                <Check className="h-3 w-3" /> {githubTokens.length} saved
               </span>
             )}
           </Label>
           
-          {hasStoredGitHub ? (
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                value="••••••••••••••••••••••••••••••••"
-                disabled
-                className="flex-1 font-mono"
-              />
-              <Button variant="outline" size="sm" onClick={clearGitHubPat}>
-                Clear
-              </Button>
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  id="github-pat"
-                  type={showGitHub ? 'text' : 'password'}
-                  placeholder="ghp_... or github_pat_..."
-                  value={githubPat}
-                  onChange={(e) => setGithubPat(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && saveGitHubPat()}
-                  className="pr-10 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowGitHub(!showGitHub)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showGitHub ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              <Button onClick={saveGitHubPat} disabled={!githubPat.trim()}>
-                {githubSaved ? <Check className="h-4 w-4" /> : 'Save'}
-              </Button>
+          {/* List of saved tokens */}
+          {githubTokens.length > 0 && (
+            <div className="space-y-2 mb-3">
+              {githubTokens.map((t, index) => (
+                <div key={index} className="flex items-center gap-2 p-2 rounded-md border bg-muted/30">
+                  <span className="text-sm font-medium flex-1">{t.label}</span>
+                  <code className="text-xs text-muted-foreground">
+                    {t.token.slice(0, 8)}...{t.token.slice(-4)}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeGitHubToken(index)}
+                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
             </div>
           )}
+
+          {/* Add new token form */}
+          <div className="flex gap-2">
+            <Input
+              placeholder="Label (e.g., Personal, Work)"
+              value={newTokenLabel}
+              onChange={(e) => setNewTokenLabel(e.target.value)}
+              className="w-32"
+            />
+            <div className="relative flex-1">
+              <Input
+                type={showNewToken ? 'text' : 'password'}
+                placeholder="ghp_... or github_pat_..."
+                value={newTokenValue}
+                onChange={(e) => setNewTokenValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addGitHubToken()}
+                className="pr-10 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewToken(!showNewToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showNewToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <Button onClick={addGitHubToken} disabled={!newTokenValue.trim()}>
+              {tokenSaved ? <Check className="h-4 w-4" /> : <><Plus className="h-4 w-4 mr-1" /> Add</>}
+            </Button>
+          </div>
+
           <p className="text-xs text-muted-foreground">
             Get yours at{' '}
             <a 
@@ -219,7 +268,7 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
             >
               github.com/settings/tokens
             </a>
-            {' '}— needs <code className="text-xs">repo</code> scope
+            {' '}— needs <code className="text-xs">repo</code> scope. Add multiple tokens to access repos from different accounts.
           </p>
         </div>
 
@@ -296,8 +345,20 @@ export function getOpenAIKey(): string | null {
   return localStorage.getItem(STORAGE_KEY_OPENAI)
 }
 
+export function getGitHubTokens(): GitHubToken[] {
+  const stored = localStorage.getItem(STORAGE_KEY_GITHUB_TOKENS)
+  if (!stored) return []
+  try {
+    return JSON.parse(stored)
+  } catch {
+    return []
+  }
+}
+
+// Legacy function - returns first token for backward compatibility
 export function getGitHubPat(): string | null {
-  return localStorage.getItem(STORAGE_KEY_GITHUB)
+  const tokens = getGitHubTokens()
+  return tokens.length > 0 ? tokens[0].token : null
 }
 
 export function getBraveKey(): string | null {

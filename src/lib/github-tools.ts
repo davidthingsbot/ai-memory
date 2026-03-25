@@ -1,6 +1,6 @@
 import { Octokit } from 'octokit'
-import { getGitHubPat, getBraveKey } from '@/components/Credentials'
-import { getSelectedRepo } from '@/components/RepoSelection'
+import { getBraveKey } from '@/components/Credentials'
+import { getSelectedRepo, getSelectedRepoToken } from '@/components/RepoSelection'
 
 export interface DirectoryEntry {
   name: string
@@ -17,7 +17,7 @@ export interface FileContent {
 }
 
 function getOctokit(): Octokit {
-  const token = getGitHubPat()
+  const token = getSelectedRepoToken()
   if (!token) throw new Error('No GitHub token')
   return new Octokit({ auth: token })
 }

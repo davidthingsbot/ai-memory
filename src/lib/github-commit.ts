@@ -1,6 +1,5 @@
 import { Octokit } from 'octokit'
-import { getGitHubPat } from '@/components/Credentials'
-import { getSelectedRepo } from '@/components/RepoSelection'
+import { getSelectedRepo, getSelectedRepoToken } from '@/components/RepoSelection'
 import type { ChangeSet } from './changeset-generator'
 
 interface CommitResult {
@@ -26,7 +25,7 @@ export async function commitFile(
   content: string,
   message: string
 ): Promise<CommitResult> {
-  const token = getGitHubPat()
+  const token = getSelectedRepoToken()
   if (!token) {
     return { success: false, error: 'No GitHub token' }
   }
@@ -89,7 +88,7 @@ export async function commitFile(
 export async function commitChangeSet(
   changeSet: ChangeSet
 ): Promise<MultiCommitResult> {
-  const token = getGitHubPat()
+  const token = getSelectedRepoToken()
   if (!token) {
     return { success: false, error: 'No GitHub token', filesChanged: 0 }
   }
