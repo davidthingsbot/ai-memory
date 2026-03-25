@@ -10,7 +10,7 @@ import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { 
   Sparkles, RotateCcw, Check, 
   ExternalLink, MessageSquare, FileEdit,
-  Undo2, Redo2
+  Undo2, Redo2, ChevronDown, ChevronUp
 } from 'lucide-react'
 import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
@@ -48,6 +48,9 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   // Undo/redo stacks for content
   const [undoStack, setUndoStack] = useState<string[]>([])
   const [redoStack, setRedoStack] = useState<string[]>([])
+  
+  // Input section collapse state (auto-collapses when generating)
+  const [inputCollapsed, setInputCollapsed] = useState(false)
   
   // Push current content to undo stack (call before making changes)
   const pushUndo = useCallback(() => {
@@ -282,6 +285,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setWorkStartTime(Date.now())
     setIsWorking(true)
     setStage('generating')
+    setInputCollapsed(true) // Collapse input when generating
     
     try {
       const result = await generateChangeSet({
@@ -473,6 +477,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setWorkStartTime(null)
     setIsWorking(false)
     setStage('input')
+    setInputCollapsed(false) // Expand input on reset
     onComplete?.(wasCommit)
   }, [onComplete, stage])
 
@@ -481,6 +486,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setStage('input')
     setChangeSet(null)
     setSteps([])
+    setInputCollapsed(false) // Expand input when going back
   }, [])
 
   // Build context description for card
@@ -517,137 +523,167 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       </CardHeader>
       <CardContent className="space-y-4">
         
-        {/* Stage: Input */}
-        {stage === 'input' && (
-          <>
-            <div className="space-y-2">
-              <div className="relative">
-                <textarea
-                  ref={contentTextareaRef}
-                  className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
-                  placeholder={contentTranscription.isRecording ? '' : "Ramble your thoughts... Don't worry about structure, just get the information down."}
-                  value={rawContent}
-                  onChange={(e) => {
-                    setRawContent(e.target.value)
-                    handleContentCursorChange()
-                  }}
-                  onSelect={handleContentCursorChange}
-                  onClick={handleContentCursorChange}
-                  onKeyUp={handleContentCursorChange}
-                  disabled={contentTranscription.isConnecting}
-                  style={contentTranscription.isRecording ? { caretColor: 'transparent', color: 'transparent' } : undefined}
-                />
-                {/* Overlay with blinking cursor at insert position while recording */}
-                {contentTranscription.isRecording && (() => {
-                  // Calculate cursor position: insert point + length of transcribed text so far
-                  const baseLen = contentBaseTextRef.current.length
-                  const transcribedLen = rawContent.length - baseLen
-                  const cursorPos = contentInsertPosRef.current + transcribedLen
-                  const beforeCursor = rawContent.slice(0, cursorPos)
-                  const afterCursor = rawContent.slice(cursorPos)
-                  
-                  return (
-                    <div 
-                      className="absolute inset-0 pointer-events-none p-3 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden"
-                      aria-hidden="true"
-                    >
-                      <span>{beforeCursor}</span>
-                      <span className={cursorVisible ? 'opacity-100' : 'opacity-0'}>▌</span>
-                      <span className="text-red-500">●</span>
-                      <span>{afterCursor}</span>
+        {/* Input Section - collapsible when not in input stage */}
+        <div className="border rounded-lg overflow-hidden">
+          {/* Collapsible header - only show when not in input stage */}
+          {stage !== 'input' && (
+            <button
+              onClick={() => setInputCollapsed(!inputCollapsed)}
+              className="w-full flex items-center justify-between p-3 text-sm font-medium text-left bg-muted/50 hover:bg-muted transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                Input Notes
+                <span className="text-muted-foreground font-normal">
+                  ({rawContent.length} chars)
+                </span>
+              </span>
+              {inputCollapsed ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronUp className="h-4 w-4" />
+              )}
+            </button>
+          )}
+          
+          {/* Content - always show in input stage, collapsible otherwise */}
+          {(stage === 'input' || !inputCollapsed) && (
+            <div className={stage !== 'input' ? 'p-3 border-t' : 'p-3'}>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="relative">
+                    <textarea
+                      ref={contentTextareaRef}
+                      className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
+                      placeholder={contentTranscription.isRecording ? '' : "Ramble your thoughts... Don't worry about structure, just get the information down."}
+                      value={rawContent}
+                      onChange={(e) => {
+                        setRawContent(e.target.value)
+                        handleContentCursorChange()
+                      }}
+                      onSelect={handleContentCursorChange}
+                      onClick={handleContentCursorChange}
+                      onKeyUp={handleContentCursorChange}
+                      disabled={contentTranscription.isConnecting || stage !== 'input'}
+                      style={contentTranscription.isRecording ? { caretColor: 'transparent', color: 'transparent' } : undefined}
+                    />
+                    {/* Overlay with blinking cursor at insert position while recording */}
+                    {contentTranscription.isRecording && (() => {
+                      const baseLen = contentBaseTextRef.current.length
+                      const transcribedLen = rawContent.length - baseLen
+                      const cursorPos = contentInsertPosRef.current + transcribedLen
+                      const beforeCursor = rawContent.slice(0, cursorPos)
+                      const afterCursor = rawContent.slice(cursorPos)
+                      
+                      return (
+                        <div 
+                          className="absolute inset-0 pointer-events-none p-3 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden"
+                          aria-hidden="true"
+                        >
+                          <span>{beforeCursor}</span>
+                          <span className={cursorVisible ? 'opacity-100' : 'opacity-0'}>▌</span>
+                          <span className="text-red-500">●</span>
+                          <span>{afterCursor}</span>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+
+                {/* Only show buttons in input stage */}
+                {stage === 'input' && (
+                  <>
+                    <div className="flex gap-2 flex-wrap items-center">
+                      <MicButton
+                        recording={contentTranscription.isRecording}
+                        transcribing={contentTranscription.isConnecting}
+                        onRecordingChange={handleContentRecordingChange}
+                        size="sm"
+                      />
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleUndo}
+                        disabled={undoStack.length === 0 || isWorking}
+                        title="Undo"
+                      >
+                        <Undo2 className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRedo}
+                        disabled={redoStack.length === 0 || isWorking}
+                        title="Redo"
+                      >
+                        <Redo2 className="h-4 w-4" />
+                      </Button>
+
+                      <div className="w-px h-6 bg-border" />
+
+                      <Button
+                        variant="outline"
+                        onClick={handleTidy}
+                        disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
+                        title="Fix spelling, grammar, formatting"
+                      >
+                        Tidy
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        onClick={handleImprove}
+                        disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
+                        title="Brief suggestions for rephrasing and structure"
+                      >
+                        Improve
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        onClick={handleFullSpec}
+                        disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
+                        title="Comprehensive analysis with web research"
+                      >
+                        Full Spec
+                      </Button>
+
+                      <Button
+                        onClick={handleGenerate}
+                        disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording || contentTranscription.isConnecting}
+                      >
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Generate
+                      </Button>
                     </div>
-                  )
-                })()}
+
+                    {(error || contentTranscription.error) && (
+                      <p className="text-sm text-destructive">{error || contentTranscription.error}</p>
+                    )}
+
+                    {contentTranscription.isRecording && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          {contentTranscription.isSpeaking ? 'Listening...' : 'Waiting for speech...'}
+                        </span>
+                      </div>
+                    )}
+
+                    <p className="text-xs text-muted-foreground">
+                      Tap mic to start/stop recording. Words appear as you speak.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
-
-            <div className="flex gap-2 flex-wrap items-center">
-              <MicButton
-                recording={contentTranscription.isRecording}
-                transcribing={contentTranscription.isConnecting}
-                onRecordingChange={handleContentRecordingChange}
-                size="sm"
-              />
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleUndo}
-                disabled={undoStack.length === 0 || isWorking}
-                title="Undo"
-              >
-                <Undo2 className="h-4 w-4" />
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRedo}
-                disabled={redoStack.length === 0 || isWorking}
-                title="Redo"
-              >
-                <Redo2 className="h-4 w-4" />
-              </Button>
-
-              <div className="w-px h-6 bg-border" />
-
-              <Button
-                variant="outline"
-                onClick={handleTidy}
-                disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
-                title="Fix spelling, grammar, formatting"
-              >
-                Tidy
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={handleImprove}
-                disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
-                title="Brief suggestions for rephrasing and structure"
-              >
-                Improve
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={handleFullSpec}
-                disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
-                title="Comprehensive analysis with web research"
-              >
-                Full Spec
-              </Button>
-
-              <Button
-                onClick={handleGenerate}
-                disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording || contentTranscription.isConnecting}
-              >
-                <Sparkles className="h-4 w-4 mr-2" />
-                Generate
-              </Button>
-            </div>
-
-            {(error || contentTranscription.error) && (
-              <p className="text-sm text-destructive">{error || contentTranscription.error}</p>
-            )}
-
-            {contentTranscription.isRecording && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                </span>
-                <span className="text-muted-foreground">
-                  {contentTranscription.isSpeaking ? 'Listening...' : 'Waiting for speech...'}
-                </span>
-              </div>
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              Tap mic to start/stop recording. Words appear as you speak.
-            </p>
-          </>
-        )}
+          )}
+        </div>
 
         {/* WorkingBox - always visible when there are steps */}
         {steps.length > 0 && (

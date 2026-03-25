@@ -1,10 +1,12 @@
 /**
- * Text Tools - AI-powered text manipulation
+ * Text Tools - AI-powered text manipulation with tool-calling
  * 
  * Three levels of assistance:
  * - Tidy: Fix errors only (spelling, grammar, formatting)
  * - Improve: Brief suggestions for rephrasing and structure (few paragraphs)
  * - Full Spec: Comprehensive analysis with web research (detailed checklist)
+ * 
+ * All functions support clarification via ask_user tool
  */
 
 import { getOpenAIKey, getSerperKey } from '@/components/Credentials'
@@ -16,10 +18,10 @@ interface ProgressCallback {
 }
 
 interface TextContext {
-  filePath?: string        // Target file path for context
-  fileContent?: string     // Existing file content (for updates)
-  selectedText?: string    // Selected text in file
-  repoName?: string        // Repository name
+  filePath?: string
+  fileContent?: string
+  selectedText?: string
+  repoName?: string
 }
 
 export interface TextToolResult {
@@ -27,26 +29,27 @@ export interface TextToolResult {
   content: string
 }
 
-// Check if AI response is asking for clarification
-function parseResponse(response: string): TextToolResult {
-  const clarificationMarkers = [
-    /^CLARIFICATION:\s*/i,
-    /^QUESTION:\s*/i,
-    /^I need to ask:\s*/i,
-    /^Before I can proceed,?\s*/i,
-    /^Could you (please )?(clarify|explain|tell me)/i,
-  ]
-  
-  for (const marker of clarificationMarkers) {
-    if (marker.test(response.trim())) {
-      return {
-        type: 'question',
-        content: response.replace(marker, '').trim(),
-      }
+// Tool definition for asking clarification
+const askUserTool = {
+  type: 'function' as const,
+  function: {
+    name: 'ask_user',
+    description: 'Ask the user for clarification when something is genuinely ambiguous and you cannot make a reasonable guess. Only use when truly necessary.',
+    parameters: {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          description: 'The specific question to ask the user'
+        },
+        context: {
+          type: 'string',
+          description: 'Brief explanation of why you need this clarification'
+        }
+      },
+      required: ['question']
     }
   }
-  
-  return { type: 'result', content: response }
 }
 
 // Build context string for prompts
@@ -63,9 +66,27 @@ function buildExistingDocContext(context?: TextContext, maxChars = 2000): string
   return `\n\nExisting document (for reference on proper names, terms, and style):\n---\n${context.fileContent.slice(0, maxChars)}\n---`
 }
 
+// Process tool calls from response
+function processToolCalls(response: any): TextToolResult | null {
+  const toolCalls = response.choices[0]?.message?.tool_calls
+  if (!toolCalls || toolCalls.length === 0) return null
+  
+  const askCall = toolCalls.find((tc: any) => tc.function.name === 'ask_user')
+  if (!askCall) return null
+  
+  try {
+    const args = JSON.parse(askCall.function.arguments)
+    const question = args.context 
+      ? `${args.question}\n\n(${args.context})`
+      : args.question
+    return { type: 'question', content: question }
+  } catch {
+    return null
+  }
+}
+
 /**
  * Tidy - Fix errors only (spelling, grammar, formatting)
- * Does NOT change meaning or add content
  */
 export async function tidyText(
   text: string,
@@ -103,10 +124,12 @@ export async function tidyText(
 - Use plain ASCII quotes (" and ') only - never curly/smart quotes
 ${contextInfo ? `\n${contextInfo}` : ''}${existingDoc}
 
-If genuinely ambiguous, start with "CLARIFICATION:" and ask. Otherwise return ONLY the cleaned text.`
+If something is genuinely ambiguous, use the ask_user tool. Otherwise return ONLY the cleaned text.`
         },
         { role: 'user', content: text }
       ],
+      tools: [askUserTool],
+      tool_choice: 'auto',
     }),
   })
 
@@ -115,18 +138,24 @@ If genuinely ambiguous, start with "CLARIFICATION:" and ask. Otherwise return ON
   }
 
   const data = await response.json()
+  
+  // Check for tool calls first
+  const toolResult = processToolCalls(data)
+  if (toolResult) {
+    onProgress?.('❓ Clarification needed')
+    return toolResult
+  }
+  
+  // Otherwise get the text response
   const result = data.choices[0]?.message?.content
-
   if (!result) throw new Error('No response from AI')
 
-  const parsed = parseResponse(result)
-  onProgress?.(parsed.type === 'question' ? '❓ Clarification needed' : '✓ Text tidied')
-  return parsed
+  onProgress?.('✓ Text tidied')
+  return { type: 'result', content: result }
 }
 
 /**
  * Improve - Brief suggestions for rephrasing and structure
- * No research, just a few paragraphs of guidance
  */
 export async function improveText(
   text: string,
@@ -165,10 +194,12 @@ Do NOT rewrite the text yourself.
 Do NOT do research or comprehensive analysis.
 Use plain ASCII quotes (" and ') only.
 
-If genuinely ambiguous, start with "CLARIFICATION:" and ask. Otherwise return ONLY your brief suggestions.`
+If something is genuinely ambiguous, use the ask_user tool. Otherwise return ONLY your brief suggestions.`
         },
         { role: 'user', content: text }
       ],
+      tools: [askUserTool],
+      tool_choice: 'auto',
     }),
   })
 
@@ -177,18 +208,22 @@ If genuinely ambiguous, start with "CLARIFICATION:" and ask. Otherwise return ON
   }
 
   const data = await response.json()
+  
+  const toolResult = processToolCalls(data)
+  if (toolResult) {
+    onProgress?.('❓ Clarification needed')
+    return toolResult
+  }
+  
   const result = data.choices[0]?.message?.content
-
   if (!result) throw new Error('No response from AI')
 
-  const parsed = parseResponse(result)
-  onProgress?.(parsed.type === 'question' ? '❓ Clarification needed' : '✓ Suggestions ready')
-  return parsed
+  onProgress?.('✓ Suggestions ready')
+  return { type: 'result', content: result }
 }
 
 /**
  * Full Spec - Comprehensive analysis with web research
- * Detailed actionable checklist covering all aspects
  */
 export async function fullSpecText(
   text: string,
@@ -264,7 +299,7 @@ ${researchContext ? '\n- **From Research**: Specific information from the search
 Format as a detailed, actionable checklist. Be specific - reference actual sentences or paragraphs.
 Use plain ASCII quotes (" and ') only.
 
-If genuinely ambiguous (unclear acronyms, ambiguous references), start with "CLARIFICATION:" and ask. Otherwise return ONLY the spec.`
+If something is genuinely ambiguous (unclear acronyms, ambiguous references), use the ask_user tool. Otherwise return ONLY the spec.`
 
   let userContent = `Text to analyze:\n${text}`
   if (researchContext) {
@@ -283,6 +318,8 @@ If genuinely ambiguous (unclear acronyms, ambiguous references), start with "CLA
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent }
       ],
+      tools: [askUserTool],
+      tool_choice: 'auto',
     }),
   })
 
@@ -291,13 +328,16 @@ If genuinely ambiguous (unclear acronyms, ambiguous references), start with "CLA
   }
 
   const data = await response.json()
+  
+  const toolResult = processToolCalls(data)
+  if (toolResult) {
+    onProgress?.('❓ Clarification needed')
+    return toolResult
+  }
+  
   const result = data.choices[0]?.message?.content
-
   if (!result) throw new Error('No response from AI')
 
-  const parsed = parseResponse(result)
-  onProgress?.(parsed.type === 'question' 
-    ? '❓ Clarification needed' 
-    : '✓ Full spec ready' + (researchContext ? ' (with research)' : ''))
-  return parsed
+  onProgress?.('✓ Full spec ready' + (researchContext ? ' (with research)' : ''))
+  return { type: 'result', content: result }
 }
