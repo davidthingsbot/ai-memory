@@ -225,38 +225,74 @@ async function fetchContent(path: string): Promise<string | null> {
 }
 
 /**
- * Apply feedback to revise a changeset
+ * Apply feedback to revise a changeset.
+ * This MODIFIES the existing content rather than regenerating from scratch.
  */
 export async function reviseChangeSet(
   currentChangeSet: ChangeSet,
   feedback: string,
+  originalNotes: string,
   onProgress?: ProgressCallback
 ): Promise<ChangeSet> {
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
 
-  onProgress?.('Revising changeset based on feedback...')
+  onProgress?.('Analyzing feedback...')
 
-  const systemPrompt = `You are a documentation assistant. The user has provided feedback on a proposed changeset.
-Revise the changeset according to their feedback.
+  // Build a more detailed context showing exactly what was generated
+  const currentChangesDetail = currentChangeSet.changes.map(c => {
+    if (c.action === 'delete') {
+      return `### ${c.action.toUpperCase()}: ${c.path}\nReason: ${c.reason || 'N/A'}`
+    }
+    return `### ${c.action.toUpperCase()}: ${c.path}
+Reason: ${c.reason || 'N/A'}
+Content:
+\`\`\`markdown
+${c.content}
+\`\`\``
+  }).join('\n\n')
 
-Respond with the same JSON format:
+  const systemPrompt = `You are a documentation assistant. You previously generated a changeset, and the user wants to modify it.
+
+IMPORTANT: You are EDITING the existing content, not starting over. Make targeted changes based on the feedback while preserving the rest of the work.
+
+Guidelines:
+- Keep all content that isn't specifically addressed by the feedback
+- Make surgical edits to address the feedback
+- Don't rewrite sections that are already good
+- Update the summary and commit message to reflect the changes
+- If adding new content, integrate it naturally with what exists
+
+Respond with the revised changeset in JSON format:
 {
-  "analysis": "...",
-  "summary": "...",
-  "commitMessage": "...",
-  "changes": [...]
+  "analysis": "What you changed and why",
+  "summary": "Updated summary of all changes",
+  "commitMessage": "Updated commit message",
+  "changes": [
+    {
+      "action": "create" | "update" | "delete",
+      "path": "path/to/file.md",
+      "content": "The COMPLETE file content (with your edits applied)",
+      "reason": "Why this change is being made"
+    }
+  ]
 }`
 
-  const userPrompt = `## Current Changeset
-\`\`\`json
-${JSON.stringify(currentChangeSet, null, 2)}
-\`\`\`
+  const userPrompt = `## Original User Notes
+${originalNotes}
+
+## Current Generated Changeset
+
+Summary: ${currentChangeSet.summary}
+
+${currentChangesDetail}
 
 ## User Feedback
-${feedback}
+"${feedback}"
 
-Please revise the changeset according to the feedback.`
+Please revise the changeset according to the feedback. Keep what's good, fix what's requested.`
+
+  onProgress?.(`Applying revision with ${getSelectedModel()}...`)
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -299,6 +335,8 @@ Please revise the changeset according to the feedback.`
       }
     }
   }
+
+  onProgress?.(`Revised ${result.changes.length} change(s)`)
 
   return result
 }

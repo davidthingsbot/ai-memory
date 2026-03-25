@@ -34,6 +34,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   const [stage, setStage] = useState<Stage>('input')
   const [steps, setSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [workStartTime, setWorkStartTime] = useState<number | null>(null)
+  const [isWorking, setIsWorking] = useState(false)
 
   // Commit result
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
@@ -130,6 +132,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     setError(null)
     setSteps([])
+    setWorkStartTime(Date.now())
+    setIsWorking(true)
     setStage('generating')
     
     try {
@@ -139,11 +143,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         selectionContext: scope?.type === 'selection' ? scope.selectedText : undefined,
       }, addStep)
       
-      addStep(`Generated ${result.changes.length} change(s)`)
+      addStep(`✓ Generated ${result.changes.length} change(s)`)
       setChangeSet(result)
+      setIsWorking(false)
       setStage('preview')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')
+      setIsWorking(false)
       setStage('input')
     }
   }, [rawContent, scope, addStep])
@@ -152,22 +158,27 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   const handleRevise = useCallback(async () => {
     if (!feedback.trim() || !changeSet) return
     
+    // Keep existing steps and append revision steps
+    addStep(`--- Revision requested: "${feedback.slice(0, 50)}${feedback.length > 50 ? '...' : ''}"`)
     setStage('generating')
     setError(null)
-    setSteps([])
+    setWorkStartTime(Date.now())
+    setIsWorking(true)
 
     try {
-      const result = await reviseChangeSet(changeSet, feedback, addStep)
+      const result = await reviseChangeSet(changeSet, feedback, rawContent, addStep)
       
-      addStep('Revision complete')
+      addStep('✓ Revision complete')
       setChangeSet(result)
       setFeedback('')
+      setIsWorking(false)
       setStage('preview')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Revision failed')
+      setIsWorking(false)
       setStage('preview')
     }
-  }, [feedback, changeSet, addStep])
+  }, [feedback, changeSet, rawContent, addStep])
 
   // Commit changeset to GitHub
   const handleCommit = useCallback(async () => {
@@ -175,21 +186,25 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     setStage('committing')
     setError(null)
-    setSteps(['Committing changes to GitHub...'])
+    addStep('--- Committing to GitHub...')
+    setWorkStartTime(Date.now())
+    setIsWorking(true)
 
     try {
       const result = await commitChangeSet(changeSet)
       
       if (result.success) {
-        addStep(`Committed ${result.filesChanged} file(s)`)
+        addStep(`✓ Committed ${result.filesChanged} file(s)`)
         setCommitUrl(result.url || null)
         setFilesChanged(result.filesChanged)
+        setIsWorking(false)
         setStage('done')
       } else {
         throw new Error(result.error || 'Commit failed')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Commit failed')
+      setIsWorking(false)
       setStage('preview')
     }
   }, [changeSet, addStep])
@@ -203,6 +218,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setCommitUrl(null)
     setFilesChanged(0)
     setSteps([])
+    setWorkStartTime(null)
+    setIsWorking(false)
     setStage('input')
     onComplete?.()
   }, [onComplete])
@@ -315,10 +332,19 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           </>
         )}
 
-        {/* Stage: Generating */}
-        {stage === 'generating' && (
-          <div className="space-y-4">
-            <WorkingBox steps={steps} isWorking={true} />
+        {/* WorkingBox - always visible when there are steps */}
+        {steps.length > 0 && (
+          <WorkingBox 
+            steps={steps} 
+            isWorking={isWorking} 
+            startTime={workStartTime || undefined}
+          />
+        )}
+
+        {/* Stage: Generating - just show loading state since WorkingBox is above */}
+        {stage === 'generating' && steps.length === 0 && (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <span className="animate-pulse">Initializing...</span>
           </div>
         )}
 
@@ -368,10 +394,10 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           </>
         )}
 
-        {/* Stage: Committing */}
+        {/* Stage: Committing - WorkingBox already visible above */}
         {stage === 'committing' && (
-          <div className="space-y-4">
-            <WorkingBox steps={steps} isWorking={true} />
+          <div className="flex items-center justify-center py-4 text-muted-foreground">
+            <span className="animate-pulse">Pushing to GitHub...</span>
           </div>
         )}
 
