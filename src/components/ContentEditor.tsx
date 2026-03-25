@@ -230,7 +230,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     if (!rawContent.trim()) return
     
     setError(null)
-    setSteps([])
+    addStep('--- Generate')
     setWorkStartTime(Date.now())
     setIsWorking(true)
     setStage('generating')
@@ -259,7 +259,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     pushUndo() // Save current state for undo
     setError(null)
-    setSteps([])
+    addStep('--- Tidy')
     setWorkStartTime(Date.now())
     setIsWorking(true)
     
@@ -279,7 +279,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     pushUndo() // Save current state for undo
     setError(null)
-    setSteps([])
+    addStep('--- Improve')
     setWorkStartTime(Date.now())
     setIsWorking(true)
     
