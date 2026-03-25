@@ -36,6 +36,13 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
   const [progress, setProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // Feedback voice recording state
+  const [feedbackRecording, setFeedbackRecording] = useState(false)
+  const [feedbackTranscribing, setFeedbackTranscribing] = useState(false)
+  const feedbackRecordingRef = useRef(false)
+  const feedbackRecordStartTime = useRef(0)
+  const feedbackIsHoldMode = useRef(false)
+
   // Commit result
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
 
@@ -111,6 +118,79 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
       stopRec()
     }
   }, [stopRec])
+
+  // Feedback voice recording handlers
+  const startFeedbackRec = useCallback(async () => {
+    if (stage !== 'preview' || feedbackTranscribing) return
+    try {
+      setError(null)
+      await startRecording()
+      setFeedbackRecording(true)
+      feedbackRecordingRef.current = true
+      feedbackRecordStartTime.current = Date.now()
+    } catch (err) {
+      setError('Could not access microphone')
+    }
+  }, [stage, feedbackTranscribing])
+
+  const stopFeedbackRec = useCallback(async () => {
+    if (!feedbackRecordingRef.current) return
+    
+    const duration = Date.now() - feedbackRecordStartTime.current
+    feedbackRecordingRef.current = false
+    setFeedbackRecording(false)
+    
+    if (duration < 300) {
+      cancelRecording()
+      return
+    }
+    
+    setFeedbackTranscribing(true)
+    setError(null)
+
+    try {
+      const blob = await stopRecording()
+      const text = await transcribeAudio(blob)
+      if (text.trim()) {
+        setFeedback(prev => prev + (prev ? ' ' : '') + text)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Transcription failed')
+    } finally {
+      setFeedbackTranscribing(false)
+    }
+  }, [])
+
+  const handleFeedbackMicClick = useCallback(async () => {
+    if (stage !== 'preview' || feedbackTranscribing) return
+    
+    if (feedbackRecordingRef.current) {
+      feedbackIsHoldMode.current = false
+      await stopFeedbackRec()
+    } else {
+      feedbackIsHoldMode.current = false
+      await startFeedbackRec()
+    }
+  }, [stage, feedbackTranscribing, startFeedbackRec, stopFeedbackRec])
+
+  const handleFeedbackMicDown = useCallback(() => {
+    feedbackIsHoldMode.current = true
+  }, [])
+
+  const handleFeedbackMicUp = useCallback(async () => {
+    if (feedbackIsHoldMode.current && feedbackRecordingRef.current) {
+      const duration = Date.now() - feedbackRecordStartTime.current
+      if (duration > 300) {
+        await stopFeedbackRec()
+      }
+    }
+  }, [stopFeedbackRec])
+
+  const handleFeedbackMicLeave = useCallback(() => {
+    if (feedbackIsHoldMode.current && feedbackRecordingRef.current) {
+      stopFeedbackRec()
+    }
+  }, [stopFeedbackRec])
 
   // Generate content
   const handleGenerate = useCallback(async () => {
@@ -312,16 +392,35 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
                 Feedback (optional)
               </label>
               <div className="flex gap-2">
+                <Button
+                  variant={feedbackRecording ? "destructive" : "outline"}
+                  size="icon"
+                  onClick={handleFeedbackMicClick}
+                  onMouseDown={handleFeedbackMicDown}
+                  onMouseUp={handleFeedbackMicUp}
+                  onMouseLeave={handleFeedbackMicLeave}
+                  onTouchStart={(e) => { e.preventDefault(); handleFeedbackMicDown(); handleFeedbackMicClick() }}
+                  onTouchEnd={(e) => { e.preventDefault(); handleFeedbackMicUp() }}
+                  disabled={feedbackTranscribing}
+                  className={`shrink-0 ${feedbackRecording ? 'animate-pulse' : ''}`}
+                >
+                  {feedbackTranscribing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mic className={`h-4 w-4 ${feedbackRecording ? 'text-white' : ''}`} />
+                  )}
+                </Button>
                 <Input
                   placeholder="e.g., Add more detail about feeding schedules"
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && feedback.trim() && handleRevise()}
+                  disabled={feedbackRecording || feedbackTranscribing}
                 />
                 <Button
                   variant="outline"
                   onClick={handleRevise}
-                  disabled={!feedback.trim()}
+                  disabled={!feedback.trim() || feedbackRecording || feedbackTranscribing}
                 >
                   <RotateCcw className="h-4 w-4 mr-2" />
                   Revise
