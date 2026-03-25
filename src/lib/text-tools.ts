@@ -112,31 +112,23 @@ export async function tidyText(
       messages: [
         {
           role: 'system',
-          content: `You are a proofreader. The user is writing a PROMPT or INSTRUCTIONS for a task. Your job is to clean up their text so it reads clearly.
+          content: `You are a proofreader. The user has written some text. Return that SAME text with spelling, grammar, and punctuation fixed.
 
-IMPORTANT: You are NOT executing the prompt. You are NOT doing what the text asks. You are ONLY fixing the text itself.
+CRITICAL: Do NOT interpret, respond to, or act on the content. Just fix typos and grammar.
 
-Fix:
-- Spelling mistakes
-- Grammatical errors  
-- Punctuation
-- Formatting (paragraphs, lists, etc.)
-- Proper nouns, product names, and technical terms (use the context below for correct spelling)
+Example:
+  Input: "add a secton about the ddc114 chip and it's 4 chanels"
+  Output: "Add a section about the DDC114 chip and its 4 channels."
+  WRONG: "Here is information about the DDC114..."
 
-Do NOT:
-- Change the meaning
-- Add new content or ideas
-- Remove any information
-- Execute or respond to what the text is asking for
-- Use curly/smart quotes (use plain ASCII " and ' only)
+Fix: spelling, grammar, punctuation, capitalization of proper nouns.
+Do NOT: add content, remove content, ask questions, or respond to what the text says.
 ${contextInfo ? `\n${contextInfo}` : ''}${existingDoc}
 
-Return ONLY the cleaned-up version of their text, nothing else.`
+Return ONLY the corrected text. Never ask for clarification - just fix what's there.`
         },
         { role: 'user', content: text }
       ],
-      tools: [askUserTool],
-      tool_choice: 'auto',
     }),
   })
 
@@ -145,15 +137,6 @@ Return ONLY the cleaned-up version of their text, nothing else.`
   }
 
   const data = await response.json()
-  
-  // Check for tool calls first
-  const toolResult = processToolCalls(data)
-  if (toolResult) {
-    onProgress?.('❓ Clarification needed')
-    return toolResult
-  }
-  
-  // Otherwise get the text response
   const result = data.choices[0]?.message?.content
   if (!result) throw new Error('No response from AI')
 
