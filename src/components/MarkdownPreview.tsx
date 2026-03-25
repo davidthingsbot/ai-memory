@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -6,8 +6,9 @@ import rehypeRaw from 'rehype-raw'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { getSelectedRepo } from './RepoSelection'
+
 import { findStagedImageByRelativePath } from '@/lib/image-store'
+import { getFileAsDataUrl } from '@/lib/github-tools'
 import 'katex/dist/katex.min.css'
 
 interface MarkdownPreviewProps {
@@ -17,59 +18,124 @@ interface MarkdownPreviewProps {
   className?: string
 }
 
+// Async image component that fetches from GitHub API
+function AsyncImage({ 
+  src, 
+  alt, 
+  basePath,
+  className 
+}: { 
+  src: string
+  alt: string
+  basePath: string
+  className?: string 
+}) {
+  const [imageSrc, setImageSrc] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadImage() {
+      if (!src) {
+        setError('No image source')
+        setLoading(false)
+        return
+      }
+
+      // Already absolute URL or data URL - use directly
+      if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
+        setImageSrc(src)
+        setLoading(false)
+        return
+      }
+
+      // Check staged images first
+      const stagedImage = findStagedImageByRelativePath(src, basePath)
+      if (stagedImage) {
+        setImageSrc(stagedImage.dataUrl)
+        setLoading(false)
+        return
+      }
+
+      // Resolve relative path to repo path
+      let resolvedPath = src
+      if (src.startsWith('./')) {
+        resolvedPath = basePath ? `${basePath}/${src.slice(2)}` : src.slice(2)
+      } else if (src.startsWith('../')) {
+        const baseSegments = basePath.split('/').filter(Boolean)
+        const srcSegments = src.split('/')
+        for (const segment of srcSegments) {
+          if (segment === '..') {
+            baseSegments.pop()
+          } else if (segment !== '.') {
+            baseSegments.push(segment)
+          }
+        }
+        resolvedPath = baseSegments.join('/')
+      } else if (!src.startsWith('/')) {
+        resolvedPath = basePath ? `${basePath}/${src}` : src
+      } else {
+        resolvedPath = src.slice(1)
+      }
+
+      // Fetch via GitHub API
+      try {
+        const dataUrl = await getFileAsDataUrl(resolvedPath)
+        if (cancelled) return
+        
+        if (dataUrl) {
+          setImageSrc(dataUrl)
+        } else {
+          setError(`Not found: ${resolvedPath}`)
+        }
+      } catch (err) {
+        if (cancelled) return
+        setError(`Failed to load: ${resolvedPath}`)
+      }
+      setLoading(false)
+    }
+
+    loadImage()
+    return () => { cancelled = true }
+  }, [src, basePath])
+
+  if (loading) {
+    return (
+      <div className="inline-flex items-center gap-2 text-muted-foreground text-sm p-2 border rounded">
+        <span className="animate-pulse">Loading image...</span>
+      </div>
+    )
+  }
+
+  if (error || !imageSrc) {
+    return (
+      <div 
+        className="inline-block p-4 border-2 border-dashed border-red-400 rounded text-sm text-red-600"
+        title={error || 'Unknown error'}
+      >
+        📷 {error || `Failed to load: ${src}`}
+      </div>
+    )
+  }
+
+  return (
+    <img 
+      src={imageSrc} 
+      alt={alt} 
+      className={className || 'max-w-full h-auto rounded-lg'}
+      loading="lazy"
+    />
+  )
+}
+
 export function MarkdownPreview({ 
   content, 
   basePath = '', 
   onNavigate,
   className = ''
 }: MarkdownPreviewProps) {
-  const repo = getSelectedRepo()
-  const repoFullName = repo?.full_name || ''
-
-  // Convert relative image URLs to raw GitHub URLs (or staged image data URLs)
-  const resolveImageUrl = (src: string): string => {
-    if (!src) return src
-    
-    // Already absolute URL or data URL
-    if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
-      return src
-    }
-    
-    // Check if this is a staged image first (for preview before commit)
-    const stagedImage = findStagedImageByRelativePath(src, basePath)
-    if (stagedImage) {
-      return stagedImage.dataUrl
-    }
-    
-    // Resolve relative path
-    let resolvedPath = src
-    if (src.startsWith('./')) {
-      resolvedPath = basePath ? `${basePath}/${src.slice(2)}` : src.slice(2)
-    } else if (src.startsWith('../')) {
-      // Handle parent directory references
-      const baseSegments = basePath.split('/').filter(Boolean)
-      const srcSegments = src.split('/')
-      
-      for (const segment of srcSegments) {
-        if (segment === '..') {
-          baseSegments.pop()
-        } else if (segment !== '.') {
-          baseSegments.push(segment)
-        }
-      }
-      resolvedPath = baseSegments.join('/')
-    } else if (!src.startsWith('/')) {
-      // Relative to current directory
-      resolvedPath = basePath ? `${basePath}/${src}` : src
-    } else {
-      // Absolute from repo root
-      resolvedPath = src.slice(1)
-    }
-    
-    // Convert to raw GitHub URL
-    return `https://raw.githubusercontent.com/${repoFullName}/main/${resolvedPath}`
-  }
-
   // Handle link clicks
   const handleLinkClick = (href: string, e: React.MouseEvent) => {
     if (!href) return
@@ -151,24 +217,13 @@ export function MarkdownPreview({
             )
           },
           
-          // Images with resolved URLs
-          img({ src, alt, ...props }) {
-            const resolvedSrc = resolveImageUrl(src || '')
+          // Images fetched via GitHub API for private repos
+          img({ src, alt }) {
             return (
-              <img 
-                src={resolvedSrc} 
+              <AsyncImage 
+                src={src || ''} 
                 alt={alt || ''} 
-                className="max-w-full h-auto rounded-lg"
-                loading="lazy"
-                onError={(e) => {
-                  // Show broken image indicator with path info
-                  const target = e.target as HTMLImageElement
-                  target.style.border = '2px dashed #ef4444'
-                  target.style.padding = '1rem'
-                  target.style.minHeight = '60px'
-                  target.alt = `Failed to load: ${src} → ${resolvedSrc}`
-                }}
-                {...props}
+                basePath={basePath}
               />
             )
           },

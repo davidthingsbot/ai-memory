@@ -110,6 +110,45 @@ export async function readFile(path: string): Promise<FileContent | null> {
 }
 
 /**
+ * Get raw file content as a data URL (for images in private repos)
+ */
+export async function getFileAsDataUrl(path: string): Promise<string | null> {
+  const octokit = getOctokit()
+  const { owner, repo } = getRepoInfo()
+
+  try {
+    const response = await octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path,
+    })
+
+    if (Array.isArray(response.data) || response.data.type !== 'file' || !('content' in response.data)) {
+      return null
+    }
+
+    // Determine MIME type from extension
+    const ext = path.split('.').pop()?.toLowerCase() || ''
+    const mimeTypes: Record<string, string> = {
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+      'svg': 'image/svg+xml',
+      'ico': 'image/x-icon',
+    }
+    const mimeType = mimeTypes[ext] || 'application/octet-stream'
+
+    // Return as data URL (content is already base64)
+    return `data:${mimeType};base64,${response.data.content.replace(/\n/g, '')}`
+  } catch (err) {
+    console.error('Failed to fetch image:', path, err)
+    return null
+  }
+}
+
+/**
  * Search for files matching a query in the repository
  */
 export async function searchFiles(query: string): Promise<{ path: string; matches: string[] }[]> {
