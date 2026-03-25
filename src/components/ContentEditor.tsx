@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { findTopicLocation, type TopicResult } from '@/lib/topic-finder'
 import { generateContent, reviseContent, type GeneratedContent } from '@/lib/content-generator'
 import { commitFile } from '@/lib/github-commit'
-import { startRecording, stopRecording, transcribeAudio } from '@/lib/audio-transcribe'
+import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { 
   FileText, Sparkles, RotateCcw, Check, 
   ExternalLink, MessageSquare, FilePlus, FileEdit, Search, Eye, Code
@@ -26,8 +26,6 @@ type Stage = 'input' | 'finding' | 'generating' | 'preview' | 'committing' | 'do
 export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProps) {
   // Input stage
   const [rawContent, setRawContent] = useState('')
-  const [recording, setRecording] = useState(false)
-  const [transcribing, setTranscribing] = useState(false)
 
   // Location finding result (resolved from scope or found by AI)
   const [topicResult, setTopicResult] = useState<TopicResult | null>(null)
@@ -39,10 +37,6 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   const [feedback, setFeedback] = useState('')
   const [steps, setSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-
-  // Feedback voice recording state
-  const [feedbackRecording, setFeedbackRecording] = useState(false)
-  const [feedbackTranscribing, setFeedbackTranscribing] = useState(false)
 
   // Commit result
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
@@ -58,67 +52,44 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     ? scope.path 
     : null
 
+  // Real-time transcription for content input
+  const contentTranscription = useRealtimeTranscription({
+    onTranscriptUpdate: (text) => {
+      // Replace content with streaming transcript while recording
+      setRawContent(text)
+    },
+  })
+
+  // Real-time transcription for feedback input
+  const feedbackTranscription = useRealtimeTranscription({
+    onTranscriptUpdate: (text) => {
+      setFeedback(text)
+    },
+  })
+
   // Content voice recording handler
-  const handleContentRecordingChange = useCallback(async (isRecording: boolean) => {
+  const handleContentRecordingChange = useCallback((isRecording: boolean) => {
     if (stage !== 'input') return
     
     if (isRecording) {
-      try {
-        setError(null)
-        await startRecording()
-        setRecording(true)
-      } catch (err) {
-        setError('Could not access microphone')
-      }
-    } else {
-      setRecording(false)
-      setTranscribing(true)
       setError(null)
-
-      try {
-        const blob = await stopRecording()
-        const text = await transcribeAudio(blob)
-        if (text.trim()) {
-          setRawContent(prev => prev + (prev ? ' ' : '') + text)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Transcription failed')
-      } finally {
-        setTranscribing(false)
-      }
+      contentTranscription.startRecording()
+    } else {
+      contentTranscription.stopRecording()
     }
-  }, [stage])
+  }, [stage, contentTranscription])
 
   // Feedback voice recording handler
-  const handleFeedbackRecordingChange = useCallback(async (isRecording: boolean) => {
+  const handleFeedbackRecordingChange = useCallback((isRecording: boolean) => {
     if (stage !== 'preview') return
     
     if (isRecording) {
-      try {
-        setError(null)
-        await startRecording()
-        setFeedbackRecording(true)
-      } catch (err) {
-        setError('Could not access microphone')
-      }
-    } else {
-      setFeedbackRecording(false)
-      setFeedbackTranscribing(true)
       setError(null)
-
-      try {
-        const blob = await stopRecording()
-        const text = await transcribeAudio(blob)
-        if (text.trim()) {
-          setFeedback(prev => prev + (prev ? ' ' : '') + text)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Transcription failed')
-      } finally {
-        setFeedbackTranscribing(false)
-      }
+      feedbackTranscription.startRecording()
+    } else {
+      feedbackTranscription.stopRecording()
     }
-  }, [stage])
+  }, [stage, feedbackTranscription])
 
   const addStep = useCallback((step: string) => {
     setSteps(prev => [...prev, step])
@@ -304,21 +275,21 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                 placeholder="Ramble your thoughts... Don't worry about structure, just get the information down."
                 value={rawContent}
                 onChange={(e) => setRawContent(e.target.value)}
-                disabled={recording || transcribing}
+                disabled={contentTranscription.isConnecting}
               />
             </div>
 
             <div className="flex gap-2 flex-wrap">
               <MicButton
-                recording={recording}
-                transcribing={transcribing}
+                recording={contentTranscription.isRecording}
+                transcribing={contentTranscription.isConnecting}
                 onRecordingChange={handleContentRecordingChange}
                 size="sm"
               />
 
               <Button
                 onClick={handleGenerate}
-                disabled={!rawContent.trim() || recording || transcribing}
+                disabled={!rawContent.trim() || contentTranscription.isRecording || contentTranscription.isConnecting}
               >
                 {needsLocationFinding ? (
                   <>
@@ -334,10 +305,24 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
               </Button>
             </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {(error || contentTranscription.error) && (
+              <p className="text-sm text-destructive">{error || contentTranscription.error}</p>
+            )}
+
+            {contentTranscription.isRecording && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                </span>
+                <span className="text-muted-foreground">
+                  {contentTranscription.isSpeaking ? 'Listening...' : 'Waiting for speech...'}
+                </span>
+              </div>
+            )}
 
             <p className="text-xs text-muted-foreground">
-              Speak or type your notes. AI will turn them into polished documentation.
+              Tap mic to start/stop recording. Words appear as you speak.
             </p>
           </>
         )}
@@ -420,8 +405,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
               </label>
               <div className="flex gap-2">
                 <MicButton
-                  recording={feedbackRecording}
-                  transcribing={feedbackTranscribing}
+                  recording={feedbackTranscription.isRecording}
+                  transcribing={feedbackTranscription.isConnecting}
                   onRecordingChange={handleFeedbackRecordingChange}
                   className="shrink-0"
                 />
@@ -430,12 +415,12 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && feedback.trim() && handleRevise()}
-                  disabled={feedbackRecording || feedbackTranscribing}
+                  disabled={feedbackTranscription.isRecording || feedbackTranscription.isConnecting}
                 />
                 <Button
                   variant="outline"
                   onClick={handleRevise}
-                  disabled={!feedback.trim() || feedbackRecording || feedbackTranscribing}
+                  disabled={!feedback.trim() || feedbackTranscription.isRecording || feedbackTranscription.isConnecting}
                 >
                   <RotateCcw className="h-4 w-4 mr-2" />
                   Revise
