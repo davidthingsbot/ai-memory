@@ -154,6 +154,9 @@ export function ClarificationBox({ question, onAnswer, onSkip }: ClarificationBo
                 className="min-h-[80px] resize-none text-sm"
                 disabled={transcription.isRecording}
               />
+              {transcription.error && (
+                <p className="text-xs text-destructive">{transcription.error}</p>
+              )}
 
               {/* Controls */}
               <div className="flex gap-2 flex-wrap items-center">

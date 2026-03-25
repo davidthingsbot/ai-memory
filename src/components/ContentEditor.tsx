@@ -799,6 +799,9 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   Revise
                 </Button>
               </div>
+              {feedbackTranscription.error && (
+                <p className="text-xs text-destructive">{feedbackTranscription.error}</p>
+              )}
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}

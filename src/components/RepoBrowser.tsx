@@ -485,7 +485,13 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
         )}
 
         {/* Search */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <MicButton
+            recording={searchTranscription.isRecording}
+            transcribing={searchTranscription.isConnecting}
+            onRecordingChange={handleSearchRecordingChange}
+            size="sm"
+          />
           <div className="relative flex-1">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -498,12 +504,6 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
               disabled={isSearching || searchTranscription.isRecording}
             />
           </div>
-          <MicButton
-            recording={searchTranscription.isRecording}
-            transcribing={searchTranscription.isConnecting}
-            onRecordingChange={handleSearchRecordingChange}
-            size="sm"
-          />
           <Button
             size="sm"
             onClick={handleSearch}
@@ -512,6 +512,9 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
             {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
           </Button>
         </div>
+        {searchTranscription.error && (
+          <p className="text-xs text-destructive">{searchTranscription.error}</p>
+        )}
 
         {/* Search results */}
         {searchResults.length > 0 && (
