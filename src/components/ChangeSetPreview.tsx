@@ -167,7 +167,9 @@ export function ChangeSetPreview({
       <div className="space-y-2">
         {changeSet.changes.map((change, index) => {
           const isExpanded = expandedPaths.has(change.path)
-          const mode = viewMode[change.path] || 'diff'
+          // Default to 'preview' for creates (no diff needed), 'diff' for updates/renames
+          const defaultMode = change.action === 'create' ? 'preview' : 'diff'
+          const mode = viewMode[change.path] || defaultMode
           const isMarkdown = change.path.endsWith('.md') || change.path.endsWith('.mdx')
           
           return (
@@ -218,10 +220,20 @@ export function ChangeSetPreview({
                         onClick={(e) => { e.stopPropagation(); toggleViewMode(change.path) }}
                         className="h-7 text-xs"
                       >
-                        {mode === 'diff' ? (
-                          <><Eye className="h-3 w-3 mr-1" /> Preview</>
+                        {change.action === 'create' ? (
+                          // For creates: Preview vs Raw (no diff needed)
+                          mode === 'preview' ? (
+                            <><Code className="h-3 w-3 mr-1" /> Raw</>
+                          ) : (
+                            <><Eye className="h-3 w-3 mr-1" /> Preview</>
+                          )
                         ) : (
-                          <><Code className="h-3 w-3 mr-1" /> Diff</>
+                          // For updates/renames: Preview vs Diff
+                          mode === 'diff' ? (
+                            <><Eye className="h-3 w-3 mr-1" /> Preview</>
+                          ) : (
+                            <><Code className="h-3 w-3 mr-1" /> Diff</>
+                          )
                         )}
                       </Button>
                     </div>
