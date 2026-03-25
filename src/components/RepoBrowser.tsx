@@ -245,7 +245,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
     }
   }
 
-  // Handle navigation from markdown links
+  // Handle navigation from markdown links or search results
   const handleNavigate = useCallback(async (path: string) => {
     // Expand tree to show the path
     await expandToPath(path)
@@ -262,9 +262,24 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
       const newScope: BrowseScope = { type: 'directory', path }
       setScope(newScope)
       onScopeSelect?.(newScope)
-      onScopeChange?.()
-      await loadDirectory(path)
     }
+    
+    // Scroll to the selected item after DOM updates
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const container = treeContainerRef.current
+        if (!container) return
+        
+        // Find the selected item in the tree
+        const selectedEl = container.querySelector(`[data-path="${path}"]`)
+        if (selectedEl) {
+          const containerRect = container.getBoundingClientRect()
+          const itemRect = selectedEl.getBoundingClientRect()
+          const scrollOffset = itemRect.top - containerRect.top + container.scrollTop
+          container.scrollTo({ top: scrollOffset, behavior: 'smooth' })
+        }
+      }, 100) // Small delay for tree to render
+    })
   }, [tree, onScopeSelect, onScopeChange])
 
   const handleSetScope = useCallback((type: BrowseScope['type'], path: string) => {
@@ -388,6 +403,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
             if (el) folderRefs.current.set(node.path, el)
             else folderRefs.current.delete(node.path)
           } : undefined}
+          data-path={node.path}
           onClick={() => node.type === 'dir' ? toggleDirectory(node) : selectFile(node.path)}
           className={`w-full flex items-center gap-1 px-2 py-1 text-sm hover:bg-muted rounded text-left ${
             selectedPath === node.path ? 'bg-muted' : ''
