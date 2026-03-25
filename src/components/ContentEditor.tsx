@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,6 +66,20 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       setFeedback(text)
     },
   })
+
+  // Blinking cursor for recording indicator
+  const [cursorVisible, setCursorVisible] = useState(true)
+  
+  useEffect(() => {
+    if (!contentTranscription.isRecording) {
+      setCursorVisible(true)
+      return
+    }
+    const interval = setInterval(() => {
+      setCursorVisible(v => !v)
+    }, 530)
+    return () => clearInterval(interval)
+  }, [contentTranscription.isRecording])
 
   // Content voice recording handler
   const handleContentRecordingChange = useCallback((isRecording: boolean) => {
@@ -274,17 +288,16 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                 <textarea
                   className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
                   placeholder="Ramble your thoughts... Don't worry about structure, just get the information down."
-                  value={rawContent}
-                  onChange={(e) => setRawContent(e.target.value)}
+                  value={contentTranscription.isRecording 
+                    ? rawContent + (cursorVisible ? ' ●▌' : '') 
+                    : rawContent}
+                  onChange={(e) => {
+                    // Strip cursor indicator if present
+                    const value = e.target.value.replace(/ ●▌$/, '').replace(/ ●$/, '')
+                    setRawContent(value)
+                  }}
                   disabled={contentTranscription.isConnecting}
                 />
-                {/* Blinking cursor indicator while recording */}
-                {contentTranscription.isRecording && (
-                  <div className="absolute bottom-3 right-3 flex items-center gap-1.5 text-xs text-red-500">
-                    <span className="animate-pulse">●</span>
-                    <span className="animate-blink">▌</span>
-                  </div>
-                )}
               </div>
             </div>
 
