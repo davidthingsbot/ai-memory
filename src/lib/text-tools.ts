@@ -123,19 +123,22 @@ export async function improveText(
     }
   }
 
-  onProgress?.('Improving text...')
+  onProgress?.('Analyzing improvements...')
 
-  const systemPrompt = `You are an expert editor and writer. Your job is to significantly improve the user's text:
-- Reorganize for better flow and clarity
-- Fix any errors (spelling, grammar, facts)
-- Expand on ideas that are underdeveloped
-- Add relevant details and examples
-- Remove redundancy
-- Make it more engaging and readable
-- Use plain ASCII quotes (" and ') only - never curly/smart quotes
-${researchContext ? '\nUse the research results below to add accurate, relevant information.' : ''}
+  const systemPrompt = `You are an expert editor and writing consultant. Analyze the user's text and create a clear SPECIFICATION for how it should be improved. Do NOT rewrite the text yourself.
 
-Return ONLY the improved text, nothing else.`
+Your spec should include:
+- **Structure**: How to reorganize for better flow
+- **Clarity**: Which sections are unclear and how to fix them
+- **Gaps**: What's missing that should be added
+- **Redundancy**: What can be cut or consolidated
+- **Research**: Specific facts/details to look up and add
+${researchContext ? '\n- **From Research**: Specific information from the search results that should be incorporated' : ''}
+
+Format as a clear, actionable checklist. Be specific - reference actual sentences or paragraphs.
+Use plain ASCII quotes (" and ') only.
+
+Return ONLY the improvement specification, not rewritten text.`
 
   const userContent = researchContext 
     ? `Text to improve:\n${text}\n\n---\nResearch results:${researchContext}`
@@ -167,6 +170,6 @@ Return ONLY the improved text, nothing else.`
     throw new Error('No response from AI')
   }
 
-  onProgress?.('✓ Text improved' + (researchContext ? ' (with web research)' : ''))
+  onProgress?.('✓ Improvement spec ready' + (researchContext ? ' (with research)' : ''))
   return result
 }
