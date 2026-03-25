@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { listDirectory, readFile, type DirectoryEntry } from '@/lib/github-tools'
@@ -36,6 +36,10 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
   const [fileLoading, setFileLoading] = useState(false)
   const [scope, setScope] = useState<BrowseScope | null>(null)
   const [showRaw, setShowRaw] = useState(false)
+  
+  // Refs for scrolling folders to top
+  const treeContainerRef = useRef<HTMLDivElement>(null)
+  const folderRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
 
   useEffect(() => {
     loadDirectory('')
@@ -89,6 +93,18 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
     } else {
       setTree(prev => setNodeLoading(prev, node.path, true))
       await loadDirectory(node.path)
+      
+      // Scroll the folder to top of container after expansion
+      requestAnimationFrame(() => {
+        const folderEl = folderRefs.current.get(node.path)
+        const container = treeContainerRef.current
+        if (folderEl && container) {
+          const containerRect = container.getBoundingClientRect()
+          const folderRect = folderEl.getBoundingClientRect()
+          const scrollOffset = folderRect.top - containerRect.top + container.scrollTop
+          container.scrollTo({ top: scrollOffset, behavior: 'smooth' })
+        }
+      })
     }
   }
 
@@ -228,6 +244,10 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
     return nodes.map(node => (
       <div key={node.path}>
         <button
+          ref={node.type === 'dir' ? (el) => {
+            if (el) folderRefs.current.set(node.path, el)
+            else folderRefs.current.delete(node.path)
+          } : undefined}
           onClick={() => node.type === 'dir' ? toggleDirectory(node) : selectFile(node.path)}
           className={`w-full flex items-center gap-1 px-2 py-1 text-sm hover:bg-muted rounded text-left ${
             selectedPath === node.path ? 'bg-muted' : ''
@@ -297,7 +317,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
         )}
 
         {/* Tree view - compact */}
-        <div className="border rounded-lg overflow-y-auto p-1 max-h-48">
+        <div ref={treeContainerRef} className="border rounded-lg overflow-y-auto p-1 max-h-48">
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
