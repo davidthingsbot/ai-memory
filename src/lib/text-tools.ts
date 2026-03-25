@@ -181,20 +181,20 @@ export async function improveText(
       messages: [
         {
           role: 'system',
-          content: `You are a writing coach. Give brief, actionable suggestions to improve the user's text.
+          content: `You are a writing consultant. The user has given you rough notes about something they want to write. Your job is to distill their notes into a clear, concise TASK BRIEF.
 ${contextInfo ? `\n${contextInfo}` : ''}${existingDoc}
 
-In just 2-3 short paragraphs, suggest:
-- How to rephrase awkward or unclear sentences
-- How to improve structure and flow
-- Any obvious gaps or redundancies
+In 2-3 short paragraphs, describe:
+- What should be written (the deliverable)
+- The key points to cover
+- The target audience and tone
 
-Be concise and specific. Reference actual phrases from the text.
-Do NOT rewrite the text yourself.
-Do NOT do research or comprehensive analysis.
+Do NOT describe how the notes should be edited.
+Do NOT reference the original notes.
+Write as if briefing someone to create the content from scratch.
 Use plain ASCII quotes (" and ') only.
 
-If something is genuinely ambiguous, use the ask_user tool. Otherwise return ONLY your brief suggestions.`
+If something is genuinely ambiguous, use the ask_user tool. Otherwise return ONLY the task brief.`
         },
         { role: 'user', content: text }
       ],
@@ -218,7 +218,7 @@ If something is genuinely ambiguous, use the ask_user tool. Otherwise return ONL
   const result = data.choices[0]?.message?.content
   if (!result) throw new Error('No response from AI')
 
-  onProgress?.('✓ Suggestions ready')
+  onProgress?.('✓ Task brief ready')
   return { type: 'result', content: result }
 }
 
@@ -284,22 +284,30 @@ export async function fullSpecText(
   const contextInfo = buildContextInfo(context)
   const existingDoc = buildExistingDocContext(context, 3000)
 
-  const systemPrompt = `You are an expert editor and writing consultant. Create a comprehensive SPECIFICATION for improving the user's text. Do NOT rewrite the text yourself.
+  const systemPrompt = `You are an expert writing consultant. The user has given you rough notes about something they want to write. Your job is to create a comprehensive SPECIFICATION for the content to be created.
 ${contextInfo ? `\n${contextInfo}` : ''}${existingDoc}
 
-Your spec should cover:
-- **Proper Names & Terms**: Capitalization and consistency issues
-- **Structure**: How to reorganize for better flow
-- **Clarity**: Which sections are unclear and how to fix them
-- **Gaps**: What's missing that should be added
-- **Redundancy**: What can be cut or consolidated
-- **Research**: Specific facts/details to look up and add
-${researchContext ? '\n- **From Research**: Specific information from the search results to incorporate' : ''}
+Create a detailed spec covering:
 
-Format as a detailed, actionable checklist. Be specific - reference actual sentences or paragraphs.
+**Overview**: What is being created and why
+
+**Target Audience**: Who will read this and what they need
+
+**Required Sections**: Outline the structure with descriptions of each section
+
+**Key Content**: Specific points, facts, and details to include
+
+**Tone & Style**: How it should read (technical, casual, formal, etc.)
+${researchContext ? '\n**Research to Incorporate**: Specific information from search results to include' : ''}
+
+**Quality Criteria**: What makes this "done" and done well
+
+Do NOT describe how to edit the original notes.
+Do NOT reference the original notes.
+Write as if creating a spec for someone to write the content from scratch.
 Use plain ASCII quotes (" and ') only.
 
-If something is genuinely ambiguous (unclear acronyms, ambiguous references), use the ask_user tool. Otherwise return ONLY the spec.`
+If something is genuinely ambiguous, use the ask_user tool. Otherwise return ONLY the spec.`
 
   let userContent = `Text to analyze:\n${text}`
   if (researchContext) {
