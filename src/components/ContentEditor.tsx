@@ -381,6 +381,25 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
         {/* Stage: Preview */}
         {stage === 'preview' && (
           <>
+            {/* Show analysis info for updates */}
+            {generated?.strategy && (
+              <div className="rounded-lg border bg-blue-50 dark:bg-blue-950/20 p-3 text-sm space-y-1">
+                <p className="font-medium text-blue-800 dark:text-blue-200">
+                  {generated.strategy === 'expand_section' && '📝 Expanding existing section'}
+                  {generated.strategy === 'new_section' && '➕ Creating new section'}
+                  {generated.strategy === 'inline_addition' && '✏️ Adding inline content'}
+                </p>
+                {generated.location && (
+                  <p className="text-blue-700 dark:text-blue-300">
+                    Location: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{generated.location}</code>
+                  </p>
+                )}
+                {generated.analysis && (
+                  <p className="text-blue-600 dark:text-blue-400 text-xs">{generated.analysis}</p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               <label className="text-sm font-medium flex items-center gap-2">
                 <FileText className="h-4 w-4" />

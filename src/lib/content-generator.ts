@@ -13,7 +13,10 @@ export interface GenerateRequest {
 export interface GeneratedContent {
   markdown: string
   commitMessage: string
-  insertAfter?: string // For updates: insert after this heading/section
+  // For updates:
+  analysis?: string      // What sections exist, where content fits
+  strategy?: 'expand_section' | 'new_section' | 'inline_addition'
+  location?: string      // The heading/section where content was placed
 }
 
 interface ProgressCallback {
@@ -68,19 +71,35 @@ Guidelines:
 
   if (isUpdate && existingContent) {
     systemPrompt += `
-You are UPDATING an existing document. You need to:
-1. Analyze the existing document structure
-2. Determine the best place to insert the new content
-3. Return the COMPLETE updated document with the new content integrated
+You are UPDATING an existing document. Your task:
 
-Return a JSON object with:
-- "markdown": the complete updated document
-- "commitMessage": a brief commit message describing the change
-- "insertAfter": the heading or section name where you inserted content (for reference)
+1. ANALYZE the existing document structure:
+   - Identify all headings and sections
+   - Understand the document's organizational pattern
+   - Note any style conventions used
+
+2. DECIDE on placement strategy:
+   - EXPAND existing section: if the new content fits naturally under an existing heading
+   - NEW section: if the content deserves its own heading
+   - INLINE addition: if it's a small addition to existing paragraph content
+
+3. INTEGRATE the content:
+   - Match the existing document's tone and style
+   - Use consistent heading levels
+   - Maintain logical flow
+
+4. Return a JSON object with:
+   - "analysis": brief description of what sections exist and where content fits
+   - "strategy": "expand_section" | "new_section" | "inline_addition"
+   - "location": the heading/section name where you're placing content
+   - "markdown": the complete updated document
+   - "commitMessage": a brief commit message describing the change
 `
     userPrompt = `## Existing Document (${request.topicResult.path})
 
+\`\`\`markdown
 ${existingContent}
+\`\`\`
 
 ## New Content to Add
 
@@ -90,7 +109,7 @@ ${request.rawContent}
 
 ${request.feedback ? `## Additional Instructions\n\n${request.feedback}` : ''}
 
-Please integrate this new content into the existing document at the most appropriate location. Return the complete updated document.`
+First, analyze the document structure and decide where this content should go. Then integrate it and return the complete updated document.`
 
   } else {
     systemPrompt += `
@@ -142,11 +161,29 @@ Please create a well-structured markdown document from these notes.`
 
   try {
     const result = JSON.parse(content)
-    onProgress?.('Done')
+    
+    // Report analysis for updates
+    if (result.analysis) {
+      onProgress?.(`Analysis: ${result.analysis}`)
+    }
+    if (result.strategy) {
+      const strategyLabels: Record<string, string> = {
+        'expand_section': 'Expanding existing section',
+        'new_section': 'Creating new section',
+        'inline_addition': 'Adding inline content',
+      }
+      onProgress?.(`Strategy: ${strategyLabels[result.strategy] || result.strategy}`)
+    }
+    if (result.location) {
+      onProgress?.(`Location: "${result.location}"`)
+    }
+    
     return {
       markdown: result.markdown,
       commitMessage: result.commitMessage || `Add documentation for ${request.topicResult.path}`,
-      insertAfter: result.insertAfter,
+      analysis: result.analysis,
+      strategy: result.strategy,
+      location: result.location,
     }
   } catch {
     throw new Error('Failed to parse AI response')
