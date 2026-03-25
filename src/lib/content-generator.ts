@@ -43,13 +43,20 @@ export async function generateContent(
   const repo = getSelectedRepo()
   if (!repo) throw new Error('No repository selected')
 
-  onProgress?.('Preparing...')
+  onProgress?.('Preparing content generation...')
+  onProgress?.(`Target: ${request.topicResult.path}`)
+  onProgress?.(`Action: ${request.topicResult.action === 'create' ? 'Creating new file' : 'Updating existing file'}`)
 
   // Fetch existing content if updating
   let existingContent = request.existingContent
   if (request.topicResult.action === 'update' && !existingContent) {
-    onProgress?.('Reading existing file...')
+    onProgress?.('Fetching existing file content...')
     existingContent = await fetchExistingContent(request.topicResult.path) || undefined
+    if (existingContent) {
+      onProgress?.(`Loaded ${existingContent.length} characters from existing file`)
+    } else {
+      onProgress?.('Note: Could not load existing file (will create new)')
+    }
   }
 
   const isUpdate = request.topicResult.action === 'update'
@@ -134,7 +141,11 @@ ${request.feedback ? `## Additional Instructions\n\n${request.feedback}` : ''}
 Please create a well-structured markdown document from these notes.`
   }
 
-  onProgress?.('Generating content...')
+  onProgress?.(`Sending to AI (${getSelectedModel()})...`)
+  onProgress?.(`Input: ${request.rawContent.length} chars of user notes`)
+  if (request.feedback) {
+    onProgress?.(`Feedback: "${request.feedback.slice(0, 50)}${request.feedback.length > 50 ? '...' : ''}"`)
+  }
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -157,15 +168,24 @@ Please create a well-structured markdown document from these notes.`
     throw new Error(`OpenAI API error: ${error}`)
   }
 
+  onProgress?.('Received AI response, parsing...')
+  
   const data = await response.json()
   const content = data.choices[0].message.content
+  
+  // Report token usage if available
+  if (data.usage) {
+    onProgress?.(`Tokens: ${data.usage.prompt_tokens} in → ${data.usage.completion_tokens} out`)
+  }
 
   try {
     const result = JSON.parse(content)
     
+    onProgress?.(`Generated ${result.markdown?.length || 0} characters of markdown`)
+    
     // Report analysis for updates
     if (result.analysis) {
-      onProgress?.(`Analysis: ${result.analysis}`)
+      onProgress?.(`📊 Analysis: ${result.analysis}`)
     }
     if (result.strategy) {
       const strategyLabels: Record<string, string> = {
@@ -200,7 +220,10 @@ export async function reviseContent(
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
 
-  onProgress?.('Revising...')
+  onProgress?.('Preparing revision...')
+  onProgress?.(`Current document: ${currentMarkdown.length} characters`)
+  onProgress?.(`Feedback: "${feedback.slice(0, 100)}${feedback.length > 100 ? '...' : ''}"`)
+  onProgress?.(`Sending to AI (${getSelectedModel()})...`)
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -243,12 +266,20 @@ Please revise the document according to this feedback.`,
     throw new Error(`OpenAI API error: ${error}`)
   }
 
+  onProgress?.('Received AI response, parsing...')
+  
   const data = await response.json()
   const content = data.choices[0].message.content
 
+  // Report token usage if available
+  if (data.usage) {
+    onProgress?.(`Tokens: ${data.usage.prompt_tokens} in → ${data.usage.completion_tokens} out`)
+  }
+
   try {
     const result = JSON.parse(content)
-    onProgress?.('Done')
+    const sizeDiff = result.markdown.length - currentMarkdown.length
+    onProgress?.(`Revised: ${result.markdown.length} chars (${sizeDiff >= 0 ? '+' : ''}${sizeDiff})`)
     return {
       markdown: result.markdown,
       commitMessage: result.commitMessage || `Update ${topicResult.path}`,

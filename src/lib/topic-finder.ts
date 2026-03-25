@@ -169,12 +169,25 @@ export async function findTopicLocation(
 
   const ctx = getContext(repo.full_name)
 
-  onProgress?.('Starting analysis...')
+  onProgress?.('Starting topic analysis...')
+  
+  // Show scope info
+  if (scope) {
+    onProgress?.(`Scope: ${scope.type} → ${scope.path}`)
+  }
 
   // Pre-fetch structure if not cached
   if (!ctx.repoStructure) {
-    onProgress?.('Loading repository structure...')
+    onProgress?.('Fetching repository structure...')
     await prefetchRepoStructure()
+    onProgress?.('Repository structure loaded')
+  } else {
+    onProgress?.('Using cached repository structure')
+  }
+  
+  // Show previous context if available
+  if (ctx.previousSearches.length > 0) {
+    onProgress?.(`Context: ${ctx.previousSearches.length} previous searches available`)
   }
 
   // Build user message with scope context
@@ -212,6 +225,8 @@ export async function findTopicLocation(
 
   while (iteration < maxIterations) {
     iteration++
+    
+    onProgress?.(`Thinking... (iteration ${iteration}/${maxIterations})`)
 
     // Call OpenAI
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -271,11 +286,34 @@ export async function findTopicLocation(
     }
 
     // Execute tool calls and cache results
+    onProgress?.(`AI requested ${assistantMessage.tool_calls.length} tool call(s)`)
+    
     for (const toolCall of assistantMessage.tool_calls) {
       const toolName = toolCall.function.name
       const toolArgs = JSON.parse(toolCall.function.arguments)
 
-      onProgress?.(`Exploring: ${toolName}${toolArgs.path ? ` (${toolArgs.path})` : toolArgs.query ? ` "${toolArgs.query}"` : ''}`)
+      // Detailed tool call description
+      let toolDesc = ''
+      switch (toolName) {
+        case 'list_directory':
+          toolDesc = `📁 Listing directory: ${toolArgs.path || '(root)'}`
+          break
+        case 'read_file':
+          toolDesc = `📄 Reading file: ${toolArgs.path}`
+          break
+        case 'search_files':
+          toolDesc = `🔍 Searching repo for: "${toolArgs.query}"`
+          break
+        case 'get_repo_structure':
+          toolDesc = `🗂️ Getting full repo structure`
+          break
+        case 'web_search':
+          toolDesc = `🌐 Web search: "${toolArgs.query}"`
+          break
+        default:
+          toolDesc = `⚙️ ${toolName}`
+      }
+      onProgress?.(toolDesc)
 
       const result = await executeTool(toolName, toolArgs)
 
