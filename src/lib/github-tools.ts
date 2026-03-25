@@ -168,7 +168,12 @@ export async function webSearch(query: string): Promise<{ title: string; url: st
     throw new Error('Brave Search API key not configured')
   }
 
-  const response = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`, {
+  // Use Vite proxy in dev to avoid CORS issues
+  // In production on GitHub Pages, this won't work (no server) - would need serverless function
+  const isDev = import.meta.env.DEV
+  const baseUrl = isDev ? '/api/brave' : 'https://api.search.brave.com'
+
+  const response = await fetch(`${baseUrl}/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`, {
     headers: {
       'Accept': 'application/json',
       'X-Subscription-Token': apiKey,
