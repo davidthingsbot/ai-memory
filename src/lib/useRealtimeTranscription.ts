@@ -73,14 +73,11 @@ export function useRealtimeTranscription(
         transcriptRef.current += delta
         onTranscriptUpdateRef.current?.(transcriptRef.current)
       },
-      onTranscriptComplete: (transcript) => {
-        // Use the complete transcript if different from accumulated
-        if (transcript && transcript !== transcriptRef.current) {
-          transcriptRef.current = transcript
-          onTranscriptUpdateRef.current?.(transcript)
+      onTranscriptComplete: () => {
+        // Utterance complete - add a space before the next one
+        if (transcriptRef.current && !transcriptRef.current.endsWith(' ')) {
+          transcriptRef.current += ' '
         }
-        // Add a space for the next utterance
-        transcriptRef.current += ' '
       },
     })
 
