@@ -1,6 +1,6 @@
 import { getOpenAIKey } from '@/components/Credentials'
 import { getSelectedRepo } from '@/components/RepoSelection'
-import { TOOL_DEFINITIONS, executeTool } from './github-tools'
+import { TOOL_DEFINITIONS, executeTool, getRepoTree } from './github-tools'
 
 export interface TopicResult {
   action: 'create' | 'update'
@@ -24,10 +24,80 @@ interface ProgressCallback {
   (step: string): void
 }
 
-const SYSTEM_PROMPT = `You are a repository organization assistant. Your job is to find the best place in a GitHub repository to store a new piece of knowledge.
+interface ExplorationContext {
+  repoFullName: string
+  repoStructure: string | null
+  previousSearches: Array<{
+    topic: string
+    result: TopicResult
+  }>
+  exploredPaths: Set<string>
+  fileContents: Map<string, string>
+}
+
+// Cached context per repository
+const contextCache = new Map<string, ExplorationContext>()
+
+function getContext(repoFullName: string): ExplorationContext {
+  let ctx = contextCache.get(repoFullName)
+  if (!ctx) {
+    ctx = {
+      repoFullName,
+      repoStructure: null,
+      previousSearches: [],
+      exploredPaths: new Set(),
+      fileContents: new Map(),
+    }
+    contextCache.set(repoFullName, ctx)
+  }
+  return ctx
+}
+
+/**
+ * Pre-fetch repository structure (can be called early to warm the cache)
+ */
+export async function prefetchRepoStructure(): Promise<void> {
+  const repo = getSelectedRepo()
+  if (!repo) return
+
+  const ctx = getContext(repo.full_name)
+  if (ctx.repoStructure) return // Already cached
+
+  try {
+    const tree = await getRepoTree(3)
+    const dirs = tree.filter(e => e.type === 'dir').map(e => `📁 ${e.path}`)
+    const rootFiles = tree.filter(e => e.type === 'file' && !e.path.includes('/')).map(e => `📄 ${e.path}`)
+    ctx.repoStructure = `Directories:\n${dirs.join('\n') || '(none)'}\n\nRoot files:\n${rootFiles.join('\n') || '(none)'}`
+  } catch (err) {
+    console.warn('Failed to prefetch repo structure:', err)
+  }
+}
+
+/**
+ * Clear cached context for current repo (useful when switching repos)
+ */
+export function clearContext(): void {
+  const repo = getSelectedRepo()
+  if (repo) {
+    contextCache.delete(repo.full_name)
+  }
+}
+
+/**
+ * Get previous searches for display
+ */
+export function getPreviousSearches(): Array<{ topic: string; result: TopicResult }> {
+  const repo = getSelectedRepo()
+  if (!repo) return []
+  const ctx = getContext(repo.full_name)
+  return ctx.previousSearches
+}
+
+function buildSystemPrompt(ctx: ExplorationContext): string {
+  let prompt = `You are a repository organization assistant. Your job is to find the best place in a GitHub repository to store a new piece of knowledge.
 
 Given a topic description from the user, you should:
-1. First, get an overview of the repository structure using get_repo_structure
+1. Review the repository structure (provided below if already known)
 2. Look for existing files or folders that relate to the topic
 3. Decide whether to CREATE a new file or UPDATE an existing file
 4. Determine the exact path
@@ -45,7 +115,38 @@ After exploring, respond with a JSON object (and nothing else) in this format:
   "reason": "Brief explanation of why this location was chosen"
 }
 
-Be thorough but efficient. Don't read every file - use search and directory listings to narrow down, then read specific files only if needed to confirm.`
+Be thorough but efficient. Use the cached information below when available.`
+
+  // Add cached repo structure
+  if (ctx.repoStructure) {
+    prompt += `\n\n## Repository Structure (cached)\n${ctx.repoStructure}`
+  }
+
+  // Add previously explored paths
+  if (ctx.exploredPaths.size > 0) {
+    prompt += `\n\n## Previously Explored Paths\n${Array.from(ctx.exploredPaths).join('\n')}`
+  }
+
+  // Add cached file contents (summaries only to save tokens)
+  if (ctx.fileContents.size > 0) {
+    prompt += `\n\n## Previously Read Files`
+    for (const [path, content] of ctx.fileContents) {
+      // Include first 200 chars as summary
+      const summary = content.slice(0, 200).replace(/\n/g, ' ')
+      prompt += `\n- ${path}: ${summary}...`
+    }
+  }
+
+  // Add previous search results
+  if (ctx.previousSearches.length > 0) {
+    prompt += `\n\n## Previous Searches in This Session`
+    for (const search of ctx.previousSearches.slice(-5)) { // Last 5
+      prompt += `\n- Topic: "${search.topic}" → ${search.result.action} ${search.result.path}`
+    }
+  }
+
+  return prompt
+}
 
 export async function findTopicLocation(
   topicDescription: string,
@@ -57,13 +158,21 @@ export async function findTopicLocation(
   const repo = getSelectedRepo()
   if (!repo) throw new Error('No repository selected')
 
+  const ctx = getContext(repo.full_name)
+
   onProgress?.('Starting analysis...')
 
+  // Pre-fetch structure if not cached
+  if (!ctx.repoStructure) {
+    onProgress?.('Loading repository structure...')
+    await prefetchRepoStructure()
+  }
+
   const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: buildSystemPrompt(ctx) },
     { 
       role: 'user', 
-      content: `Repository: ${repo.full_name}\n\nTopic to document: "${topicDescription}"\n\nPlease find the best location for this content.`
+      content: `Repository: ${repo.full_name}\n\nTopic to document: "${topicDescription}"\n\nPlease find the best location for this content.${ctx.repoStructure ? ' The repository structure is already cached above, so you may not need to call get_repo_structure unless you need more detail.' : ''}`
     },
   ]
 
@@ -113,13 +222,16 @@ export async function findTopicLocation(
       const jsonMatch = content.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
         try {
-          const result = JSON.parse(jsonMatch[0])
+          const result = JSON.parse(jsonMatch[0]) as TopicResult
+          
+          // Cache this search result
+          ctx.previousSearches.push({
+            topic: topicDescription,
+            result,
+          })
+          
           onProgress?.('Analysis complete')
-          return {
-            action: result.action,
-            path: result.path,
-            reason: result.reason,
-          }
+          return result
         } catch {
           throw new Error('Failed to parse AI response as JSON')
         }
@@ -127,7 +239,7 @@ export async function findTopicLocation(
       throw new Error('AI did not return a valid location recommendation')
     }
 
-    // Execute tool calls
+    // Execute tool calls and cache results
     for (const toolCall of assistantMessage.tool_calls) {
       const toolName = toolCall.function.name
       const toolArgs = JSON.parse(toolCall.function.arguments)
@@ -135,6 +247,19 @@ export async function findTopicLocation(
       onProgress?.(`Exploring: ${toolName}${toolArgs.path ? ` (${toolArgs.path})` : toolArgs.query ? ` "${toolArgs.query}"` : ''}`)
 
       const result = await executeTool(toolName, toolArgs)
+
+      // Cache exploration results
+      if (toolName === 'list_directory' && toolArgs.path) {
+        ctx.exploredPaths.add(toolArgs.path)
+      }
+      if (toolName === 'read_file' && toolArgs.path) {
+        // Cache file content (truncated)
+        const content = result.replace(/^File:.*\n\n/, '')
+        ctx.fileContents.set(toolArgs.path, content.slice(0, 500))
+      }
+      if (toolName === 'get_repo_structure' && !ctx.repoStructure) {
+        ctx.repoStructure = result
+      }
 
       messages.push({
         role: 'tool',

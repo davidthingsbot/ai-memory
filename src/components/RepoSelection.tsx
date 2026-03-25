@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getGitHubPat } from '@/components/Credentials'
 import { FolderGit2, Check, RefreshCw, Search, Lock, Globe } from 'lucide-react'
+import { clearContext, prefetchRepoStructure } from '@/lib/topic-finder'
 
 const STORAGE_KEY_REPO = 'ai-memory:selected-repo'
 
@@ -93,9 +94,15 @@ export function RepoSelection({ onRepoChange }: RepoSelectionProps) {
   }, [fetchRepos])
 
   const selectRepo = (repo: Repository) => {
+    // Clear any cached context from previous repo
+    clearContext()
+    
     setSelectedRepo(repo)
     localStorage.setItem(STORAGE_KEY_REPO, JSON.stringify(repo))
     onRepoChange?.(repo)
+    
+    // Pre-fetch the new repo's structure in background
+    prefetchRepoStructure()
   }
 
   const clearSelection = () => {
