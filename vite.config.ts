@@ -4,8 +4,13 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 
+// Repository name for GitHub Pages deployment
+const REPO_NAME = 'ai-memory'
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // Base path: '/' for dev, '/repo-name/' for production (GitHub Pages)
+  base: mode === 'production' ? `/${REPO_NAME}/` : '/',
   plugins: [react(), tailwindcss(), basicSsl()],
   resolve: {
     alias: {
@@ -16,4 +21,4 @@ export default defineConfig({
     port: 3075,
     host: true,
   },
-})
+}))
