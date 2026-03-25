@@ -142,6 +142,28 @@ export async function commitChangeSet(
           type: 'blob',
           sha: null,
         })
+      } else if (change.action === 'rename' && change.previousPath) {
+        // For renames: delete old path + create at new path
+        treeEntries.push({
+          path: change.previousPath,
+          mode: '100644',
+          type: 'blob',
+          sha: null, // Delete old path
+        })
+        if (change.content !== undefined) {
+          const { data: blobData } = await octokit.rest.git.createBlob({
+            owner,
+            repo: repoName,
+            content: change.content,
+            encoding: 'utf-8',
+          })
+          treeEntries.push({
+            path: change.path,
+            mode: '100644',
+            type: 'blob',
+            sha: blobData.sha, // Create at new path
+          })
+        }
       } else if (change.content !== undefined) {
         // For create/update, create a blob with the content
         const { data: blobData } = await octokit.rest.git.createBlob({

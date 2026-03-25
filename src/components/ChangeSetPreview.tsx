@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { 
   FilePlus, FileEdit, Trash2, ChevronDown, ChevronRight,
-  Check, X, Eye, Code
+  Check, X, Eye, Code, ArrowRight
 } from 'lucide-react'
 import { diffLines, type Change } from 'diff'
 import { MarkdownPreview } from './MarkdownPreview'
@@ -51,6 +51,8 @@ export function ChangeSetPreview({
         return <FileEdit className="h-4 w-4 text-blue-600" />
       case 'delete':
         return <Trash2 className="h-4 w-4 text-red-600" />
+      case 'rename':
+        return <ArrowRight className="h-4 w-4 text-purple-600" />
     }
   }
 
@@ -62,6 +64,8 @@ export function ChangeSetPreview({
         return 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30'
       case 'delete':
         return 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30'
+      case 'rename':
+        return 'border-purple-200 bg-purple-50 dark:border-purple-900 dark:bg-purple-950/30'
     }
   }
 
@@ -73,6 +77,8 @@ export function ChangeSetPreview({
         return 'Update'
       case 'delete':
         return 'Delete'
+      case 'rename':
+        return 'Rename'
     }
   }
 
@@ -116,6 +122,7 @@ export function ChangeSetPreview({
   const creates = changeSet.changes.filter(c => c.action === 'create')
   const updates = changeSet.changes.filter(c => c.action === 'update')
   const deletes = changeSet.changes.filter(c => c.action === 'delete')
+  const renames = changeSet.changes.filter(c => c.action === 'rename')
 
   return (
     <div className="space-y-4">
@@ -129,7 +136,7 @@ export function ChangeSetPreview({
       </div>
 
       {/* Stats bar */}
-      <div className="flex gap-4 text-sm">
+      <div className="flex gap-4 text-sm flex-wrap">
         {creates.length > 0 && (
           <span className="flex items-center gap-1 text-green-600">
             <FilePlus className="h-4 w-4" />
@@ -140,6 +147,12 @@ export function ChangeSetPreview({
           <span className="flex items-center gap-1 text-blue-600">
             <FileEdit className="h-4 w-4" />
             {updates.length} modified
+          </span>
+        )}
+        {renames.length > 0 && (
+          <span className="flex items-center gap-1 text-purple-600">
+            <ArrowRight className="h-4 w-4" />
+            {renames.length} renamed
           </span>
         )}
         {deletes.length > 0 && (
@@ -176,7 +189,15 @@ export function ChangeSetPreview({
                 <span className="text-xs font-medium uppercase tracking-wide opacity-70">
                   {getActionLabel(change.action)}
                 </span>
-                <code className="text-sm flex-1 truncate">{change.path}</code>
+                {change.action === 'rename' && change.previousPath ? (
+                  <span className="text-sm flex-1 truncate flex items-center gap-1">
+                    <code className="text-muted-foreground">{change.previousPath}</code>
+                    <ArrowRight className="h-3 w-3 shrink-0" />
+                    <code>{change.path}</code>
+                  </span>
+                ) : (
+                  <code className="text-sm flex-1 truncate">{change.path}</code>
+                )}
               </button>
 
               {/* Expanded content */}
@@ -217,6 +238,38 @@ export function ChangeSetPreview({
                           {change.previousContent.length > 500 && '...'}
                         </pre>
                       )}
+                    </div>
+                  ) : change.action === 'rename' ? (
+                    <div className="space-y-2">
+                      <div className="rounded border bg-purple-100 dark:bg-purple-950/50 p-2">
+                        <p className="text-xs text-purple-700 dark:text-purple-300">
+                          Moving from <code>{change.previousPath}</code> to <code>{change.path}</code>
+                        </p>
+                      </div>
+                      {change.content && change.previousContent && change.content !== change.previousContent ? (
+                        mode === 'preview' && isMarkdown ? (
+                          <div className="rounded border bg-background p-4 max-h-96 overflow-y-auto">
+                            <MarkdownPreview content={change.content} />
+                          </div>
+                        ) : (
+                          <div className="max-h-80 overflow-y-auto">
+                            {renderDiff(change.previousContent, change.content)}
+                          </div>
+                        )
+                      ) : change.content ? (
+                        mode === 'preview' && isMarkdown ? (
+                          <div className="rounded border bg-background p-4 max-h-96 overflow-y-auto">
+                            <MarkdownPreview content={change.content} />
+                          </div>
+                        ) : (
+                          <div className="rounded border bg-background p-3 max-h-40 overflow-y-auto">
+                            <pre className="text-xs whitespace-pre-wrap font-mono text-muted-foreground">
+                              {change.content.slice(0, 500)}
+                              {change.content.length > 500 && '...'}
+                            </pre>
+                          </div>
+                        )
+                      ) : null}
                     </div>
                   ) : change.action === 'update' && change.previousContent ? (
                     mode === 'preview' && isMarkdown ? (

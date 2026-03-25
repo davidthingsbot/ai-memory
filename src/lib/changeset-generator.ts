@@ -12,10 +12,11 @@ import type { BrowseScope } from '@/components/RepoBrowser'
 
 // A single file change in the changeset
 export interface FileChange {
-  action: 'create' | 'update' | 'delete'
+  action: 'create' | 'update' | 'delete' | 'rename'
   path: string
   content?: string          // New content for create/update
   previousContent?: string  // Original content for updates (for diff display)
+  previousPath?: string     // Original path for renames
   reason?: string           // Why this change is being made
 }
 
@@ -109,12 +110,14 @@ Given the user's notes and the repository context, determine what file operation
 - CREATE new files where appropriate
 - UPDATE existing files to add or modify content
 - DELETE files if they should be removed or consolidated
+- RENAME files or folders to better organize content
 
 Guidelines:
 - Prefer updating existing files over creating new ones when the content fits
 - Use clear, descriptive filenames for new files (ending in .md)
 - Follow the repository's existing organizational structure
 - When updating, integrate content naturally - don't just append
+- Use rename when a file/folder should be moved or given a better name
 - Provide clear markdown formatting
 
 You MUST respond with a JSON object in this exact format:
@@ -124,9 +127,10 @@ You MUST respond with a JSON object in this exact format:
   "commitMessage": "Short git commit message",
   "changes": [
     {
-      "action": "create" | "update" | "delete",
+      "action": "create" | "update" | "delete" | "rename",
       "path": "path/to/file.md",
-      "content": "Full file content for create/update (omit for delete)",
+      "previousPath": "old/path/to/file.md (only for rename)",
+      "content": "Full file content for create/update/rename (omit for delete)",
       "reason": "Why this change is being made"
     }
   ]
@@ -194,7 +198,7 @@ Based on the above, determine what file operations are needed and return the cha
     throw new Error('Invalid changeset: missing changes array')
   }
 
-  // Add previousContent for updates
+  // Add previousContent for updates and renames
   for (const change of result.changes) {
     if (change.action === 'update') {
       const existing = existingFiles.find(f => f.path === change.path)
@@ -207,6 +211,15 @@ Based on the above, determine what file operations are needed and return the cha
           change.previousContent = content
         }
       }
+    } else if (change.action === 'rename' && change.previousPath) {
+      // For renames, load content from the old path if not provided
+      if (!change.content) {
+        const content = await fetchContent(change.previousPath)
+        if (content) {
+          change.content = content
+        }
+      }
+      change.previousContent = await fetchContent(change.previousPath) || undefined
     }
   }
 
@@ -262,6 +275,7 @@ Guidelines:
 - Don't rewrite sections that are already good
 - Update the summary and commit message to reflect the changes
 - If adding new content, integrate it naturally with what exists
+- Use rename when asked to move or reorganize files/folders
 
 Respond with the revised changeset in JSON format:
 {
@@ -270,8 +284,9 @@ Respond with the revised changeset in JSON format:
   "commitMessage": "Updated commit message",
   "changes": [
     {
-      "action": "create" | "update" | "delete",
+      "action": "create" | "update" | "delete" | "rename",
       "path": "path/to/file.md",
+      "previousPath": "old/path/to/file.md (only for rename)",
       "content": "The COMPLETE file content (with your edits applied)",
       "reason": "Why this change is being made"
     }
