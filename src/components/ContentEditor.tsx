@@ -1,15 +1,16 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { type TopicResult } from '@/lib/topic-finder'
 import { generateContent, reviseContent, type GeneratedContent } from '@/lib/content-generator'
 import { commitFile } from '@/lib/github-commit'
-import { startRecording, stopRecording, cancelRecording, transcribeAudio } from '@/lib/audio-transcribe'
+import { startRecording, stopRecording, transcribeAudio } from '@/lib/audio-transcribe'
 import { 
-  FileText, Mic, Sparkles, Loader2, RotateCcw, Check, 
+  FileText, Sparkles, RotateCcw, Check, 
   ExternalLink, MessageSquare, FilePlus, FileEdit
 } from 'lucide-react'
+import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
 
 interface ContentEditorProps {
@@ -25,9 +26,6 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
   const [rawContent, setRawContent] = useState('')
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
-  const recordingRef = useRef(false)
-  const recordStartTime = useRef(0)
-  const isHoldMode = useRef(false)
 
   // Preview stage
   const [stage, setStage] = useState<Stage>('input')
@@ -40,158 +38,71 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
   // Feedback voice recording state
   const [feedbackRecording, setFeedbackRecording] = useState(false)
   const [feedbackTranscribing, setFeedbackTranscribing] = useState(false)
-  const feedbackRecordingRef = useRef(false)
-  const feedbackRecordStartTime = useRef(0)
-  const feedbackIsHoldMode = useRef(false)
 
   // Commit result
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
 
-  // Voice recording - tap to toggle or hold to record
-  const startRec = useCallback(async () => {
-    if (stage !== 'input' || transcribing) return
-    try {
-      setError(null)
-      await startRecording()
-      setRecording(true)
-      recordingRef.current = true
-      recordStartTime.current = Date.now()
-    } catch (err) {
-      setError('Could not access microphone')
-    }
-  }, [stage, transcribing])
-
-  const stopRec = useCallback(async () => {
-    if (!recordingRef.current) return
+  // Content voice recording handler
+  const handleContentRecordingChange = useCallback(async (isRecording: boolean) => {
+    if (stage !== 'input') return
     
-    const duration = Date.now() - recordStartTime.current
-    recordingRef.current = false
-    setRecording(false)
-    
-    if (duration < 300) {
-      cancelRecording()
-      return
-    }
-    
-    setTranscribing(true)
-    setError(null)
-
-    try {
-      const blob = await stopRecording()
-      const text = await transcribeAudio(blob)
-      if (text.trim()) {
-        setRawContent(prev => prev + (prev ? ' ' : '') + text)
+    if (isRecording) {
+      try {
+        setError(null)
+        await startRecording()
+        setRecording(true)
+      } catch (err) {
+        setError('Could not access microphone')
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Transcription failed')
-    } finally {
-      setTranscribing(false)
-    }
-  }, [])
-
-  const handleMicClick = useCallback(async () => {
-    if (stage !== 'input' || transcribing) return
-    
-    if (recordingRef.current) {
-      isHoldMode.current = false
-      await stopRec()
     } else {
-      isHoldMode.current = false
-      await startRec()
-    }
-  }, [stage, transcribing, startRec, stopRec])
-
-  const handleMicDown = useCallback(() => {
-    isHoldMode.current = true
-  }, [])
-
-  const handleMicUp = useCallback(async () => {
-    if (isHoldMode.current && recordingRef.current) {
-      const duration = Date.now() - recordStartTime.current
-      if (duration > 300) {
-        await stopRec()
-      }
-    }
-  }, [stopRec])
-
-  const handleMicLeave = useCallback(() => {
-    if (isHoldMode.current && recordingRef.current) {
-      stopRec()
-    }
-  }, [stopRec])
-
-  // Feedback voice recording handlers
-  const startFeedbackRec = useCallback(async () => {
-    if (stage !== 'preview' || feedbackTranscribing) return
-    try {
+      setRecording(false)
+      setTranscribing(true)
       setError(null)
-      await startRecording()
-      setFeedbackRecording(true)
-      feedbackRecordingRef.current = true
-      feedbackRecordStartTime.current = Date.now()
-    } catch (err) {
-      setError('Could not access microphone')
-    }
-  }, [stage, feedbackTranscribing])
 
-  const stopFeedbackRec = useCallback(async () => {
-    if (!feedbackRecordingRef.current) return
-    
-    const duration = Date.now() - feedbackRecordStartTime.current
-    feedbackRecordingRef.current = false
-    setFeedbackRecording(false)
-    
-    if (duration < 300) {
-      cancelRecording()
-      return
-    }
-    
-    setFeedbackTranscribing(true)
-    setError(null)
-
-    try {
-      const blob = await stopRecording()
-      const text = await transcribeAudio(blob)
-      if (text.trim()) {
-        setFeedback(prev => prev + (prev ? ' ' : '') + text)
+      try {
+        const blob = await stopRecording()
+        const text = await transcribeAudio(blob)
+        if (text.trim()) {
+          setRawContent(prev => prev + (prev ? ' ' : '') + text)
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Transcription failed')
+      } finally {
+        setTranscribing(false)
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Transcription failed')
-    } finally {
-      setFeedbackTranscribing(false)
     }
-  }, [])
+  }, [stage])
 
-  const handleFeedbackMicClick = useCallback(async () => {
-    if (stage !== 'preview' || feedbackTranscribing) return
+  // Feedback voice recording handler
+  const handleFeedbackRecordingChange = useCallback(async (isRecording: boolean) => {
+    if (stage !== 'preview') return
     
-    if (feedbackRecordingRef.current) {
-      feedbackIsHoldMode.current = false
-      await stopFeedbackRec()
+    if (isRecording) {
+      try {
+        setError(null)
+        await startRecording()
+        setFeedbackRecording(true)
+      } catch (err) {
+        setError('Could not access microphone')
+      }
     } else {
-      feedbackIsHoldMode.current = false
-      await startFeedbackRec()
-    }
-  }, [stage, feedbackTranscribing, startFeedbackRec, stopFeedbackRec])
+      setFeedbackRecording(false)
+      setFeedbackTranscribing(true)
+      setError(null)
 
-  const handleFeedbackMicDown = useCallback(() => {
-    feedbackIsHoldMode.current = true
-  }, [])
-
-  const handleFeedbackMicUp = useCallback(async () => {
-    if (feedbackIsHoldMode.current && feedbackRecordingRef.current) {
-      const duration = Date.now() - feedbackRecordStartTime.current
-      if (duration > 300) {
-        await stopFeedbackRec()
+      try {
+        const blob = await stopRecording()
+        const text = await transcribeAudio(blob)
+        if (text.trim()) {
+          setFeedback(prev => prev + (prev ? ' ' : '') + text)
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Transcription failed')
+      } finally {
+        setFeedbackTranscribing(false)
       }
     }
-  }, [stopFeedbackRec])
-
-  const handleFeedbackMicLeave = useCallback(() => {
-    if (feedbackIsHoldMode.current && feedbackRecordingRef.current) {
-      stopFeedbackRec()
-    }
-  }, [stopFeedbackRec])
+  }, [stage])
 
   const addStep = useCallback((step: string) => {
     setSteps(prev => [...prev, step])
@@ -333,25 +244,15 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
             </div>
 
             <div className="flex gap-2 flex-wrap">
-              <Button
-                variant={recording ? "destructive" : "outline"}
+              <MicButton
+                recording={recording}
+                transcribing={transcribing}
+                onRecordingChange={handleContentRecordingChange}
                 size="sm"
-                onClick={handleMicClick}
-                onMouseDown={handleMicDown}
-                onMouseUp={handleMicUp}
-                onMouseLeave={handleMicLeave}
-                onTouchStart={(e) => { e.preventDefault(); handleMicDown(); handleMicClick() }}
-                onTouchEnd={(e) => { e.preventDefault(); handleMicUp() }}
-                disabled={transcribing}
-                className={recording ? 'animate-pulse' : ''}
-              >
-                {transcribing ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Mic className={`h-4 w-4 mr-2 ${recording ? 'text-white' : ''}`} />
-                )}
-                {recording ? 'Tap to stop' : transcribing ? 'Transcribing...' : 'Tap or hold'}
-              </Button>
+              />
+              <span className="text-xs text-muted-foreground">
+                {recording ? 'Recording...' : transcribing ? 'Transcribing...' : ''}
+              </span>
 
               <Button
                 onClick={handleGenerate}
@@ -418,24 +319,12 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
                 Feedback (optional)
               </label>
               <div className="flex gap-2">
-                <Button
-                  variant={feedbackRecording ? "destructive" : "outline"}
-                  size="icon"
-                  onClick={handleFeedbackMicClick}
-                  onMouseDown={handleFeedbackMicDown}
-                  onMouseUp={handleFeedbackMicUp}
-                  onMouseLeave={handleFeedbackMicLeave}
-                  onTouchStart={(e) => { e.preventDefault(); handleFeedbackMicDown(); handleFeedbackMicClick() }}
-                  onTouchEnd={(e) => { e.preventDefault(); handleFeedbackMicUp() }}
-                  disabled={feedbackTranscribing}
-                  className={`shrink-0 ${feedbackRecording ? 'animate-pulse' : ''}`}
-                >
-                  {feedbackTranscribing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Mic className={`h-4 w-4 ${feedbackRecording ? 'text-white' : ''}`} />
-                  )}
-                </Button>
+                <MicButton
+                  recording={feedbackRecording}
+                  transcribing={feedbackTranscribing}
+                  onRecordingChange={handleFeedbackRecordingChange}
+                  className="shrink-0"
+                />
                 <Input
                   placeholder="e.g., Add more detail about feeding schedules"
                   value={feedback}

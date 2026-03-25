@@ -31,6 +31,12 @@ function App() {
     setBrowseScope(scope)
   }, [])
 
+  const handleScopeChange = useCallback(() => {
+    // Clear topic result when scope changes so user can enter new topic
+    setTopicResult(null)
+    setContentKey(k => k + 1)
+  }, [])
+
   const handleLocationFound = useCallback((result: TopicResult) => {
     // If topic changed, reset content editor
     if (topicResult && (topicResult.path !== result.path || topicResult.action !== result.action)) {
@@ -74,6 +80,7 @@ function App() {
             <RepoBrowser 
               repoName={selectedRepo.full_name}
               onScopeSelect={handleScopeSelect}
+              onScopeChange={handleScopeChange}
             />
           )}
 

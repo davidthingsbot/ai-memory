@@ -1,10 +1,11 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { findTopicLocation, type TopicResult } from '@/lib/topic-finder'
-import { startRecording, stopRecording, cancelRecording, transcribeAudio } from '@/lib/audio-transcribe'
-import { MessageSquare, Search, FileText, FilePlus, Loader2, Check, RotateCcw, Mic } from 'lucide-react'
+import { startRecording, stopRecording, transcribeAudio } from '@/lib/audio-transcribe'
+import { MessageSquare, Search, FileText, FilePlus, Loader2, Check, RotateCcw } from 'lucide-react'
+import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
 
 import type { BrowseScope } from './RepoBrowser'
@@ -25,9 +26,6 @@ export function TopicFinder({ repoName, scope, onLocationFound }: TopicFinderPro
   // Voice recording state
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
-  const recordingRef = useRef(false)
-  const recordStartTime = useRef<number>(0)
-  const isHoldMode = useRef(false) // true = hold-to-record, false = toggle
 
   const addStep = useCallback((step: string) => {
     setSteps(prev => [...prev, step])
@@ -68,92 +66,42 @@ export function TopicFinder({ repoName, scope, onLocationFound }: TopicFinderPro
     }
   }
 
-  // Voice recording handlers - supports both hold-to-record and tap-to-toggle
-  const startRec = useCallback(async () => {
-    try {
-      setError(null)
-      await startRecording()
-      setRecording(true)
-      recordingRef.current = true
-      recordStartTime.current = Date.now()
-    } catch (err) {
-      console.error('Failed to start recording:', err)
-      setError('Could not access microphone. Please allow microphone access.')
-    }
-  }, [])
-
-  const stopRec = useCallback(async (autoSearch = true) => {
-    if (!recordingRef.current) return
-    
-    const duration = Date.now() - recordStartTime.current
-    recordingRef.current = false
-    setRecording(false)
-    
-    // If too short, cancel
-    if (duration < 300) {
-      cancelRecording()
-      return
-    }
-    
-    setTranscribing(true)
-    setError(null)
-
-    try {
-      const audioBlob = await stopRecording()
-      const text = await transcribeAudio(audioBlob)
-      
-      if (text.trim()) {
-        setTopic(text)
-        if (autoSearch) {
-          handleSearch(text)
-        }
-      } else {
-        setError('Could not understand audio. Please try again.')
+  // Voice recording handler
+  const handleRecordingChange = useCallback(async (isRecording: boolean) => {
+    if (isRecording) {
+      // Start recording
+      try {
+        setError(null)
+        await startRecording()
+        setRecording(true)
+      } catch (err) {
+        console.error('Failed to start recording:', err)
+        setError('Could not access microphone. Please allow microphone access.')
       }
-    } catch (err) {
-      console.error('Transcription failed:', err)
-      setError(err instanceof Error ? err.message : 'Transcription failed')
-    } finally {
-      setTranscribing(false)
+    } else {
+      // Stop recording
+      setRecording(false)
+      setTranscribing(true)
+      setError(null)
+
+      try {
+        const audioBlob = await stopRecording()
+        const text = await transcribeAudio(audioBlob)
+        
+        if (text.trim()) {
+          setTopic(text)
+          handleSearch(text)
+        } else {
+          setError('Could not understand audio. Please try again.')
+        }
+      } catch (err) {
+        console.error('Transcription failed:', err)
+        setError(err instanceof Error ? err.message : 'Transcription failed')
+      } finally {
+        setTranscribing(false)
+      }
     }
   }, [handleSearch])
-
-  const handleMicClick = useCallback(async () => {
-    if (loading || transcribing) return
-    
-    // If already recording (toggle mode), stop
-    if (recordingRef.current) {
-      isHoldMode.current = false
-      await stopRec(true)
-    } else {
-      // Start recording
-      isHoldMode.current = false
-      await startRec()
-    }
-  }, [loading, transcribing, startRec, stopRec])
-
-  const handleMicDown = useCallback(() => {
-    // Mark as potentially hold mode
-    isHoldMode.current = true
-  }, [])
-
-  const handleMicUp = useCallback(async () => {
-    // Only stop if we're in hold mode and have been recording for > 300ms
-    if (isHoldMode.current && recordingRef.current) {
-      const duration = Date.now() - recordStartTime.current
-      if (duration > 300) {
-        await stopRec(true)
-      }
-      // If < 300ms, it was a tap - let the click handler deal with toggle
-    }
-  }, [stopRec])
-
-  const handleMicLeave = useCallback(() => {
-    // If mouse leaves while in hold mode, stop recording
-    if (isHoldMode.current && recordingRef.current) {
-      stopRec(true)
-    }
-  }, [stopRec])
 
   return (
     <Card className="w-full">
@@ -225,26 +173,14 @@ export function TopicFinder({ repoName, scope, onLocationFound }: TopicFinderPro
           // Show input
           <div className="space-y-4">
             <div className="flex gap-2">
-              {/* Voice button - tap to toggle or hold to record */}
-              <Button
-                variant={recording ? "destructive" : "outline"}
-                size="icon"
-                disabled={loading || transcribing}
-                onClick={handleMicClick}
-                onMouseDown={handleMicDown}
-                onMouseUp={handleMicUp}
-                onMouseLeave={handleMicLeave}
-                onTouchStart={(e) => { e.preventDefault(); handleMicDown(); handleMicClick(); }}
-                onTouchEnd={(e) => { e.preventDefault(); handleMicUp(); }}
-                className={`shrink-0 ${recording ? 'animate-pulse' : ''}`}
-                title="Tap to start/stop or hold to record"
-              >
-                {transcribing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Mic className={`h-4 w-4 ${recording ? 'text-white' : ''}`} />
-                )}
-              </Button>
+              {/* Voice button */}
+              <MicButton
+                recording={recording}
+                transcribing={transcribing}
+                disabled={loading}
+                onRecordingChange={handleRecordingChange}
+                className="shrink-0"
+              />
 
               <Input
                 placeholder="e.g., How to prune apple trees"

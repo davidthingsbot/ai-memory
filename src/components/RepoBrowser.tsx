@@ -10,6 +10,7 @@ import {
 interface RepoBrowserProps {
   repoName?: string // For future use
   onScopeSelect?: (scope: BrowseScope | null) => void
+  onScopeChange?: () => void // Called when scope changes, to clear downstream state
 }
 
 export interface BrowseScope {
@@ -25,7 +26,7 @@ interface TreeNode extends DirectoryEntry {
   loading?: boolean
 }
 
-export function RepoBrowser({ onScopeSelect }: RepoBrowserProps) {
+export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) {
   const [tree, setTree] = useState<TreeNode[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -83,6 +84,7 @@ export function RepoBrowser({ onScopeSelect }: RepoBrowserProps) {
     const newScope: BrowseScope = { type: 'directory', path: node.path || '/' }
     setScope(newScope)
     onScopeSelect?.(newScope)
+    onScopeChange?.() // Clear downstream state
     
     if (node.expanded) {
       // Collapse
@@ -135,6 +137,7 @@ export function RepoBrowser({ onScopeSelect }: RepoBrowserProps) {
         }
         setScope(newScope)
         onScopeSelect?.(newScope)
+        onScopeChange?.() // Clear downstream state
       }
     } catch (err) {
       setError('Failed to load file')
@@ -163,8 +166,9 @@ export function RepoBrowser({ onScopeSelect }: RepoBrowserProps) {
       }
       setScope(newScope)
       onScopeSelect?.(newScope)
+      onScopeChange?.() // Clear downstream state
     }
-  }, [selectedPath, fileContent, onScopeSelect])
+  }, [selectedPath, fileContent, onScopeSelect, onScopeChange])
 
   const clearScope = useCallback(() => {
     setScope(null)
