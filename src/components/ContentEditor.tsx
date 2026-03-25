@@ -288,7 +288,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                 {/* Hidden textarea for actual editing */}
                 <textarea
                   className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
-                  placeholder="Ramble your thoughts... Don't worry about structure, just get the information down."
+                  placeholder={contentTranscription.isRecording ? '' : "Ramble your thoughts... Don't worry about structure, just get the information down."}
                   value={rawContent}
                   onChange={(e) => setRawContent(e.target.value)}
                   disabled={contentTranscription.isConnecting}
