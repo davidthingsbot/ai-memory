@@ -1,54 +1,158 @@
 # ai-memory
 
-A small standalone browser application for capturing memories and storing them in a GitHub repository — with AI assistance for research and writing.
+A browser-based app for capturing knowledge and storing it in your GitHub repository — with AI assistance for research, formatting, and organization.
 
-## What It Does
+## Concept
 
-You have thoughts, knowledge, and memories worth keeping. This app helps you capture them properly:
+You have thoughts worth keeping. This app lets you speak or type rough notes, then uses AI to research, expand, and format them properly before committing to your personal knowledge repository.
 
-1. **Name a topic** — "How to prune apple trees" or "Bernard's contact info" or "That restaurant in Portland"
-2. **Say what you know** — speak or type your rough notes
-3. **AI researches and writes it up** — expands your notes with relevant context, formats it cleanly
-4. **Stored in your GitHub repo** — in the right place, properly organized, version-controlled forever
+Your memories live in *your* GitHub repo. Plain markdown. Version-controlled forever.
 
-Your memories live in *your* repository. Not someone else's cloud. Not a proprietary format. Just markdown files in git.
+---
 
-## How It Works (Browser-Based)
+## User Flow
 
-The entire app runs in your browser. No server required. Two APIs are called directly:
+The interface is a **vertical scroll** of discrete sections ("capsules"). Each section builds on the previous, guiding you from setup through content capture to final commit.
 
-- **OpenAI API** — for the AI that helps research and write
-- **GitHub API** — for reading/writing your memory repository
+### 1. 🔑 Credentials (Setup)
 
-### JavaScript Libraries
+*Top of the scroll. One-time configuration.*
 
-GitHub provides official browser-compatible libraries:
-- [`octokit`](https://github.com/octokit/octokit.js) — full GitHub API client, works in browsers
-- Can create files, read directories, commit changes — all from JavaScript
+| Field | Purpose |
+|-------|---------|
+| OpenAI API Key | Powers AI research and writing |
+| GitHub PAT | Read/write access to your repository |
 
-For OpenAI:
-- Direct `fetch()` calls to `api.openai.com` work fine from browsers
-- Or use the [`openai`](https://github.com/openai/openai-node) library (browser-compatible builds available)
+- Keys are stored in browser local storage (encrypted with optional password)
+- Once entered, keys are masked — you can't read them back, only replace them
+- No backend server; API calls go directly from browser to OpenAI/GitHub
 
-## Credentials Needed
+### 2. 📁 Repository Selection
 
-You'll need two tokens:
+*Which repo holds your knowledge?*
 
-| Token | Purpose | Where to Get It |
-|-------|---------|-----------------|
-| **OpenAI API Key** | Powers the AI assistant | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
-| **GitHub PAT** | Read/write access to your memory repo | [github.com/settings/tokens](https://github.com/settings/tokens) |
+- Voice or text input: "my-notes" or "davidthings/brain"
+- Dropdown of accessible repos (fetched via GitHub API)
+- Once selected, persists across sessions
 
-### Are My Keys Safe?
+### 3. 📂 Scope (Optional)
 
-**Yes, with a few important points:**
+*Narrow down to a specific area of the repository.*
 
-- Your keys are stored **only in your browser's local storage** — they never leave your machine except to call the respective APIs directly
-- The app has **no backend server** — there's nowhere for keys to be sent
-- API calls go directly from your browser to OpenAI/GitHub (HTTPS encrypted)
-- You can verify this: the app is open source, and browser dev tools show exactly what network requests are made
+- Can skip (work at repo root) or specify a subfolder
+- Voice/text: "electronics/arduino" or "recipes/baking"
+- AI can suggest likely locations based on your topic
+- User confirms or adjusts
 
-**Optional protection:** A local password can encrypt your stored tokens. Even if someone accesses your browser, they'd need the password to decrypt the keys.
+**Why scope?** A large repo might have hundreds of folders. Scoping tells the AI where to focus, making topic matching faster and more accurate.
+
+### 4. 💬 Topic
+
+*What do you want to document?*
+
+- Voice or text: "I want to add a note about sourdough starters"
+- AI scans the scoped area (or full repo if unscoped) to find:
+  - Existing file that matches → will append/update
+  - Related folder → will create new file there
+  - No match → suggests where to create it
+- User confirms the target location
+
+### 5. 📝 Content
+
+*Say what you know.*
+
+- Voice and/or text input — ramble, dictate, type fragments
+- No structure required; just get the information out
+- Capture a paragraph or several
+- **"Do it"** button when ready
+
+### 6. ⚙️ Processing
+
+*AI takes over.*
+
+The AI:
+1. Reads any style instructions in parent directories (like AGENTS.md or STYLE.md)
+2. Researches the topic for supporting context
+3. Structures and formats the content
+4. Adds relevant details, diagrams (ASCII), or image suggestions
+5. Produces clean markdown matching the repo's conventions
+
+**Progress shown** — intermediate steps visible so you know what's happening.
+
+### 7. 📄 Result
+
+*Review what AI wrote.*
+
+- Nicely formatted markdown preview
+- Either a new document or a section to insert
+- Fully covers your input, sharpened and expanded
+- Possibly editable inline (future feature)
+
+### 8. ✅ Action
+
+*Accept, modify, or reject.*
+
+| Action | Result |
+|--------|--------|
+| **Accept** | Commits to repo, returns to Topic (step 4) for next entry |
+| **Modify** | Edit the result, resubmit for refinement |
+| **Reject** | Returns to Content (step 5) to revise your input |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       Browser App                           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
+│  │ Credentials│→│  Repo   │→│  Scope  │→│  Topic  │        │
+│  └─────────┘  └─────────┘  └─────────┘  └─────────┘        │
+│                                              ↓              │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
+│  │ Action  │←│ Result  │←│Processing│←│ Content │        │
+│  └─────────┘  └─────────┘  └─────────┘  └─────────┘        │
+│       ↓                                                     │
+│   [commit]                                                  │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│  Local Storage: encrypted keys, repo settings, preferences  │
+└─────────────────────────────────────────────────────────────┘
+         │                              │
+         ▼                              ▼
+  ┌─────────────┐                ┌─────────────┐
+  │   OpenAI    │                │   GitHub    │
+  │     API     │                │     API     │
+  └─────────────┘                └─────────────┘
+```
+
+---
+
+## Technical Stack
+
+- **Vite** + **React 19** + **TypeScript**
+- **Tailwind CSS 4** + **shadcn/ui** (Radix primitives)
+- **Octokit** — GitHub API client (browser-compatible)
+- **Web Speech API** — voice input (browser-native)
+- **OpenAI API** — direct fetch calls
+
+No backend required. Static hosting (GitHub Pages, Vercel, Netlify) works fine.
+
+---
+
+## Repo Style Instructions
+
+When writing content, AI checks for instruction files in parent directories:
+
+- `AGENTS.md` — agent behavior, tone, formatting rules
+- `STYLE.md` — writing style guide
+- `README.md` — context about the folder's purpose
+
+This ensures generated content matches the conventions of that part of the repository.
+
+---
 
 ## Setup Guide
 
@@ -61,126 +165,83 @@ You'll need two tokens:
 2. Click "Sign up"
 3. Choose a username, enter your email, create a password
 4. Verify your email address
-5. Done — you have a GitHub account
 
 </details>
 
 <details>
-<summary><strong>Step 2: Create a Repository for Your Memories</strong></summary>
+<summary><strong>Step 2: Create a Repository</strong></summary>
 
 1. Log into GitHub
-2. Click the **+** in the top right → "New repository"
-3. Name it something like `memories` or `notes` or `brain`
-4. Choose **Private** (unless you want your memories public)
+2. Click **+** → "New repository"
+3. Name it (e.g., `notes`, `brain`, `knowledge`)
+4. Choose **Private**
 5. Check "Add a README file"
 6. Click "Create repository"
 
-You now have a place for your memories to live.
-
 </details>
 
 <details>
-<summary><strong>Step 3: Create a Personal Access Token (PAT)</strong></summary>
-
-This token lets the app read/write to your repository.
+<summary><strong>Step 3: Create a Personal Access Token</strong></summary>
 
 1. Go to [github.com/settings/tokens](https://github.com/settings/tokens)
-2. Click "Generate new token" → "Generate new token (classic)"
-3. Give it a name like "ai-memory app"
-4. Set expiration (90 days is fine, you can always make a new one)
-5. Check these scopes:
-   - `repo` (full control of private repositories)
-6. Click "Generate token"
-7. **Copy the token immediately** — you won't see it again
-
-Keep this token secret. Anyone with it can access your repositories.
+2. Click "Generate new token" → "Fine-grained token"
+3. Name: "ai-memory"
+4. Repository access: select your notes repo
+5. Permissions: Contents (read/write)
+6. Generate and **copy immediately**
 
 </details>
 
 ### For People New to OpenAI
 
 <details>
-<summary><strong>Getting an OpenAI API Key</strong></summary>
+<summary><strong>Getting an API Key</strong></summary>
 
 1. Go to [platform.openai.com](https://platform.openai.com)
 2. Sign up or log in
-3. Go to [API Keys](https://platform.openai.com/api-keys)
-4. Click "Create new secret key"
-5. Give it a name like "ai-memory"
-6. **Copy the key immediately** — you won't see it again
+3. Go to API Keys → "Create new secret key"
+4. Copy immediately
 
-**Cost:** OpenAI charges per use. For memory capture, costs are minimal — typically pennies per session. You can set spending limits in your OpenAI account settings.
-
-**Safety:** Your API key is like a password. Don't share it. This app stores it only in your browser and calls OpenAI directly — no middleman.
+**Cost:** Pay-per-use. Memory capture typically costs pennies per session.
 
 </details>
 
-## Workflow Example
+---
 
-```
-You: "Let's add something about sourdough starters"
+## Development
 
-App: "Got it — I'll put this under food/baking/sourdough.md. What do you know?"
-
-You: "Feeding ratio is 1:1:1 by weight. Feed every 24 hours at room temp,
-      or weekly if refrigerated. Smells like acetone if hungry. 
-      Can use discard for pancakes."
-
-App: "Nice. Want me to research and expand this, or save as-is?"
-
-You: "Research it — add stuff about hydration levels and troubleshooting"
-
-App: [researches, writes it up properly, commits to repo]
-
-"Done. Created food/baking/sourdough.md with sections on feeding,
- storage, hydration, troubleshooting, and discard recipes."
+```bash
+cd ai-memory
+npm install
+npm run dev
 ```
 
-## Architecture
+Dev server: http://localhost:3075 (also accessible on LAN)
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    Your Browser                      │
-├─────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
-│  │   Voice     │  │     AI      │  │   GitHub    │  │
-│  │   Input     │→ │  Research   │→ │   Commit    │  │
-│  │  (Web API)  │  │  (OpenAI)   │  │  (Octokit)  │  │
-│  └─────────────┘  └─────────────┘  └─────────────┘  │
-│                         │                 │          │
-│                         ▼                 ▼          │
-│              ┌─────────────────────────────────┐    │
-│              │   Local Storage (encrypted)     │    │
-│              │   - OpenAI key                  │    │
-│              │   - GitHub PAT                  │    │
-│              │   - Repo settings               │    │
-│              └─────────────────────────────────┘    │
-└─────────────────────────────────────────────────────┘
-          │                              │
-          ▼                              ▼
-   ┌─────────────┐                ┌─────────────┐
-   │   OpenAI    │                │   GitHub    │
-   │     API     │                │     API     │
-   └─────────────┘                └─────────────┘
-```
+---
 
 ## Status
 
-**Proof of concept exists** for voice interface, AI research, and content generation.
+| Component | Status |
+|-----------|--------|
+| Project scaffold | ✅ Done |
+| Credentials UI | 🔲 Todo |
+| Repository selection | 🔲 Todo |
+| Scope selection | 🔲 Todo |
+| Topic matching | 🔲 Todo |
+| Voice input | 🔲 Todo |
+| Content capture | 🔲 Todo |
+| AI processing | 🔲 Todo |
+| Result preview | 🔲 Todo |
+| GitHub commit | 🔲 Todo |
 
-**TODO:**
-- [ ] Browser-based GitHub integration (octokit)
-- [ ] Token management UI with optional password protection
-- [ ] Setup wizard for new users
-- [ ] Topic → file path mapping logic
-- [ ] Voice input (Web Speech API)
-- [ ] Mobile-friendly UI
+---
 
 ## Why This Exists
 
-Most note-taking apps lock your data in proprietary formats. Most AI assistants keep your conversations on their servers. This approach gives you:
+Most note apps lock your data in proprietary formats. Most AI assistants keep conversations on their servers. This gives you:
 
-- **Your data in your repo** — plain markdown, forever accessible
+- **Your data in your repo** — plain markdown, forever yours
 - **Version history** — git tracks every change
 - **AI assistance** — without giving up ownership
-- **No vendor lock-in** — switch AI providers anytime, your notes stay put
+- **No vendor lock-in** — switch providers anytime
