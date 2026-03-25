@@ -224,20 +224,17 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
                   <Button variant="outline" size="sm" onClick={() => removeGitHubToken(index)}>
                     Clear
                   </Button>
+                  {/* Add button on last token row */}
+                  {index === githubTokens.length - 1 && !showNewToken && (
+                    <Button variant="outline" size="sm" onClick={() => setShowNewToken(true)}>
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               ))}
               
-              {/* Add button or add form */}
-              {!showNewToken ? (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setShowNewToken(true)}
-                  className="w-full"
-                >
-                  <Plus className="h-4 w-4 mr-1" /> Add Another Token
-                </Button>
-              ) : (
+              {/* Add form when expanded */}
+              {showNewToken && (
                 <div className="flex gap-2 pt-2 border-t">
                   <Input
                     placeholder="Label"
