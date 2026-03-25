@@ -119,6 +119,7 @@ Guidelines:
 - When updating, integrate content naturally - don't just append
 - Use rename when a file/folder should be moved or given a better name
 - Provide clear markdown formatting
+- Use plain ASCII quotes (" and ') only - never use curly/smart quotes (" " ' ')
 
 You MUST respond with a JSON object in this exact format:
 {
@@ -276,6 +277,7 @@ Guidelines:
 - Update the summary and commit message to reflect the changes
 - If adding new content, integrate it naturally with what exists
 - Use rename when asked to move or reorganize files/folders
+- Use plain ASCII quotes (" and ') only - never use curly/smart quotes
 
 Respond with the revised changeset in JSON format:
 {
