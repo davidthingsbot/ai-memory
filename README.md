@@ -1,233 +1,163 @@
 # ai-memory
 
-A browser-based app for capturing knowledge and storing it in your GitHub repository — with AI assistance for research, formatting, and organization.
+An experiment in AI-assisted knowledge capture.
 
-## Concept
+## What This Is
 
-You have thoughts worth keeping. This app lets you speak or type rough notes, then uses AI to research, expand, and format them properly before committing to your personal knowledge repository.
+This is an **experimental app** exploring several ideas at once:
 
-Your memories live in *your* GitHub repo. Plain markdown. Version-controlled forever.
+1. **AI as a collaborator inside the app** — not a chatbot you talk to, but an AI that works alongside you: exploring your repository, figuring out where content belongs, researching topics, and turning rough notes into polished documentation.
 
----
+2. **Voice as a primary input method** — speak your thoughts instead of typing. Tap-to-toggle or hold-to-record. The app transcribes and works with whatever you say.
 
-## User Flow
+3. **A scrolling, linear task flow** — discrete sections ("capsules") that stack vertically. Each step builds on the previous. No hidden menus or modal dialogs — everything visible, everything in sequence.
 
-The interface is a **vertical scroll** of discrete sections ("capsules"). Each section builds on the previous, guiding you from setup through content capture to final commit.
+4. **Repository research** — point the AI at a GitHub repo and let it explore: reading files, understanding structure, finding where new content fits. If the AI is good enough, it figures out not just *what* to write but *where* to put it.
 
-### 1. 🔑 Credentials (Setup)
+5. **Your data stays yours** — plain markdown in your own GitHub repository. Version-controlled. No proprietary formats. No cloud lock-in.
 
-*Top of the scroll. One-time configuration.*
-
-| Field | Purpose |
-|-------|---------|
-| OpenAI API Key | Powers AI research and writing |
-| GitHub PAT | Read/write access to your repository |
-
-- Keys are stored in browser local storage (encrypted with optional password)
-- Once entered, keys are masked — you can't read them back, only replace them
-- No backend server; API calls go directly from browser to OpenAI/GitHub
-
-### 2. 📁 Repository Selection
-
-*Which repo holds your knowledge?*
-
-- Voice or text input: "my-notes" or "davidthings/brain"
-- Dropdown of accessible repos (fetched via GitHub API)
-- Once selected, persists across sessions
-
-### 3. 📂 Scope (Optional)
-
-*Narrow down to a specific area of the repository.*
-
-- Can skip (work at repo root) or specify a subfolder
-- Voice/text: "electronics/arduino" or "recipes/baking"
-- AI can suggest likely locations based on your topic
-- User confirms or adjusts
-
-**Why scope?** A large repo might have hundreds of folders. Scoping tells the AI where to focus, making topic matching faster and more accurate.
-
-### 4. 💬 Topic
-
-*What do you want to document?*
-
-- Voice or text: "I want to add a note about sourdough starters"
-- AI scans the scoped area (or full repo if unscoped) to find:
-  - Existing file that matches → will append/update
-  - Related folder → will create new file there
-  - No match → suggests where to create it
-- User confirms the target location
-
-### 5. 📝 Content
-
-*Say what you know.*
-
-- Voice and/or text input — ramble, dictate, type fragments
-- No structure required; just get the information out
-- Capture a paragraph or several
-- **"Do it"** button when ready
-
-### 6. ⚙️ Processing
-
-*AI takes over.*
-
-The AI:
-1. Reads any style instructions in parent directories (like AGENTS.md or STYLE.md)
-2. Researches the topic for supporting context
-3. Structures and formats the content
-4. Adds relevant details, diagrams (ASCII), or image suggestions
-5. Produces clean markdown matching the repo's conventions
-
-**Progress shown** — intermediate steps visible so you know what's happening.
-
-### 7. 📄 Result
-
-*Review what AI wrote.*
-
-- Nicely formatted markdown preview
-- Either a new document or a section to insert
-- Fully covers your input, sharpened and expanded
-- Possibly editable inline (future feature)
-
-### 8. ✅ Action
-
-*Accept, modify, or reject.*
-
-| Action | Result |
-|--------|--------|
-| **Accept** | Commits to repo, returns to Topic (step 4) for next entry |
-| **Modify** | Edit the result, resubmit for refinement |
-| **Reject** | Returns to Content (step 5) to revise your input |
+The hypothesis: if you lower the friction enough (voice input, AI formatting, automatic commits), capturing knowledge becomes almost effortless.
 
 ---
 
-## Architecture
+## How It Works
+
+The interface is a vertical scroll of sections. You work through them top to bottom.
+
+### 1. 🔑 Credentials
+
+Enter your API keys:
+
+| Key | Purpose |
+|-----|---------|
+| **OpenAI API Key** | Powers transcription, AI research, and content generation |
+| **GitHub PAT** | Read/write access to your repository |
+| **Brave Search API Key** | *(optional)* Enables web research during content generation |
+
+Keys are stored in your browser's localStorage. They never leave your device except to call the respective APIs directly. Once saved, keys are masked — you can clear and re-enter, but not read them back.
+
+### 2. 🤖 Model Selection
+
+Choose which OpenAI model to use:
+
+- **GPT-5.2** — latest and most capable
+- **GPT-5** — previous generation flagship
+- **GPT-4o** — fast and capable
+- **GPT-4o Mini** — cheapest option
+
+Selection persists across sessions. All AI operations (transcription, topic finding, content generation) use this model.
+
+### 3. 📁 Repository Selection
+
+Pick which GitHub repository holds your knowledge. The app fetches your accessible repos via GitHub API. Selection persists — you don't re-pick every session.
+
+### 4. 📂 Repository Browser
+
+A tree view of your repository's structure. Click directories to expand them. Click files to preview their contents.
+
+**Scope selection:** When you click a directory or file, it becomes your current "scope" — the AI will focus its search there. A green indicator shows your active scope.
+
+**Text selection:** Select text within a file preview to scope even tighter — useful for saying "add content near this section."
+
+Scope is optional. Skip it to let the AI search the whole repo.
+
+### 5. 💬 Topic Finder
+
+Describe what you want to document. Voice or text.
+
+> "I want to add notes about sourdough starters"
+> "Document the API authentication flow"
+> "Add a section on error handling"
+
+The AI explores your repository (within scope if set) using tools:
+
+- **get_repo_structure** — understand the overall layout
+- **list_directory** — see what's in a folder
+- **read_file** — examine file contents
+- **search_files** — find files by content
+- **web_search** — research the topic online (if Brave key configured)
+
+A **Working** box shows each step: what the AI is doing, which tools it's calling, what it's finding. You see the research happen in real time.
+
+The AI returns:
+- **Action:** Create new file, or update existing file
+- **Path:** Where the content should go
+- **Reasoning:** Why this location makes sense
+
+Confirm, or describe a different topic to search again.
+
+### 6. 📝 Content Editor
+
+Once a location is confirmed, capture your content. Three stages:
+
+**Input stage:**
+- Speak or type your notes — rough, rambling, incomplete is fine
+- Multiple recordings append together
+- Or skip notes entirely if the topic itself is enough context
+
+**Generation stage:**
+- AI takes your notes (or just the topic) and generates polished markdown
+- For existing files: analyzes document structure, decides where to insert
+- Shows analysis, placement strategy, and location in a blue info box
+- Working box shows token usage and generation progress
+
+**Preview stage:**
+- See the generated markdown
+- Edit inline if needed
+- Provide voice/text feedback for revisions ("add more examples", "make it shorter")
+- Revise as many times as needed
+
+### 7. ✅ Commit
+
+When satisfied, commit directly to GitHub:
+- AI generates an appropriate commit message
+- Content is committed via GitHub API
+- App resets to Topic Finder for your next entry
+
+---
+
+## The Working Box
+
+A key feature: you see what the AI is doing. Every step is logged:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                       Browser App                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
-│  │ Credentials│→│  Repo   │→│  Scope  │→│  Topic  │        │
-│  └─────────┘  └─────────┘  └─────────┘  └─────────┘        │
-│                                              ↓              │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
-│  │ Action  │←│ Result  │←│Processing│←│ Content │        │
-│  └─────────┘  └─────────┘  └─────────┘  └─────────┘        │
-│       ↓                                                     │
-│   [commit]                                                  │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│  Local Storage: encrypted keys, repo settings, preferences  │
-└─────────────────────────────────────────────────────────────┘
-         │                              │
-         ▼                              ▼
-  ┌─────────────┐                ┌─────────────┐
-  │   OpenAI    │                │   GitHub    │
-  │     API     │                │     API     │
-  └─────────────┘                └─────────────┘
+01  Starting topic analysis...
+02  Scope: file → docs/api.md
+03  Using cached repository structure
+04  Thinking... (iteration 1/10)
+05  AI requested 2 tool call(s)
+06  📄 Reading file: docs/api.md
+07  🌐 Web search: "REST API best practices"
+08  Thinking... (iteration 2/10)
+09  ✓ Found location: docs/api.md (update)
 ```
+
+For content generation:
+```
+01  Target: docs/api.md
+02  Action: Updating existing file
+03  Loaded 2847 characters from existing file
+04  Sending to AI (gpt-5.2)...
+05  Tokens: 1247 in → 892 out
+06  📊 Analysis: Document has Auth, Endpoints sections...
+07  Strategy: expand_section
+08  Location: "Endpoints"
+```
+
+This transparency helps you understand (and trust) what the AI is doing with your content.
 
 ---
 
 ## Voice Interface
 
-Voice is a first-class input method. Two modes are supported, both using the same OpenAI API key.
+All text inputs support voice. Red microphone buttons with two modes:
 
-### Mode 1: Turn-Taking (Pipeline)
+- **Tap to toggle** — tap once to start recording, tap again to stop
+- **Hold to record** — hold the button while speaking, release when done
 
-Traditional request-response: you speak, AI responds, you speak again.
+Status text shows current state: "Recording... tap to stop" or "Transcribing..."
 
-```
-User speaks → STT → text → LLM → text → TTS → AI speaks
-```
-
-**Architecture:**
-- **STT:** OpenAI Whisper (`gpt-4o-mini-transcribe`) or Deepgram
-- **LLM:** GPT-4o-mini or similar (chat completions API)
-- **TTS:** OpenAI TTS (`gpt-4o-mini-tts`) or ElevenLabs
-
-**Pros:** Flexible (swap providers), inspectable (text in the middle), works with any LLM.
-**Cons:** Higher latency (~1-2s), loses prosody between stages.
-
-**Best for:** Form-filling steps (repo selection, scope, topic) where you want clear turn boundaries.
-
-### Mode 2: Conversational (Realtime API)
-
-Continuous bidirectional speech via OpenAI Realtime API. Native speech-to-speech with no intermediate text conversion.
-
-```
-User speaks ←──── WebSocket ────→ AI speaks
-         (PCM audio both directions)
-```
-
-**Architecture:**
-- Single WebSocket connection to `wss://api.openai.com/v1/realtime`
-- Audio streamed as PCM16 at 24kHz
-- Semantic VAD detects when you've finished speaking (not just silence)
-- Barge-in supported: interrupt the AI mid-response
-
-**Pros:** Sub-second latency, preserves prosody, natural conversation flow.
-**Cons:** OpenAI-only, harder to debug (no text in the middle).
-
-**Best for:** The rambling content capture step where you're thinking out loud.
-
-### Implementation Source
-
-Working implementations exist in the [whiteboard](https://github.com/davidthingsbot/whiteboard) project:
-
-```
-whiteboard/implementation/studies/inf-canvas/
-├── src/items/
-│   ├── VoiceAgent.jsx           ← Turn-taking (pipeline mode)
-│   ├── ConversationAgent.jsx    ← Continuous (Realtime API)
-│   └── lib/
-│       ├── audio-capture.js     ← Mic capture + resampling
-│       ├── audio-playback.js    ← Gapless audio queue
-│       ├── pcm-audio.js         ← PCM16 ↔ Float32 conversion
-│       ├── realtime-session.js  ← WebSocket lifecycle for Realtime API
-│       ├── stt-providers.js     ← Whisper, Deepgram adapters
-│       └── tts-providers.js     ← OpenAI TTS, ElevenLabs adapters
-└── doc/items/
-    ├── voice-agent.md           ← Pipeline architecture docs
-    └── conversation-agent.md    ← Realtime API architecture docs
-```
-
-### Integration Steps
-
-1. **Copy shared libraries** from `whiteboard/inf-canvas/src/items/lib/`:
-   - `audio-capture.js`, `audio-playback.js`, `pcm-audio.js`
-   - `realtime-session.js` (for conversational mode)
-   - `stt-providers.js`, `tts-providers.js` (for pipeline mode)
-
-2. **Copy UI components**:
-   - `TranscriptPanel.jsx` — scrolling message list
-   - `InputBar.jsx` — text + mic input with mode toggle
-
-3. **For Realtime API** (conversational mode):
-   - Need a server endpoint to proxy ephemeral token requests
-   - Browser calls `POST /api/realtime/session`
-   - Server calls `POST https://api.openai.com/v1/realtime/client_secrets`
-   - Returns `{ value, expires_at }` ephemeral token
-   - Browser opens WebSocket with token in subprotocol
-
-4. **For pipeline mode** (turn-taking):
-   - Direct browser → OpenAI calls work fine
-   - No server proxy needed (API key in localStorage)
-
-### Audio Pipeline Details
-
-**Capture (browser → API):**
-```
-Mic (48kHz Float32) → downsample to 24kHz → PCM16 → base64 → WebSocket
-```
-
-**Playback (API → browser):**
-```
-WebSocket → base64 → PCM16 → Float32 → AudioBuffer → speaker
-```
-
-**Critical:** AudioContext must use browser's native sample rate (usually 48kHz). Forcing 24kHz causes silent buffers in Chrome. Use `downsample()` to convert to the API's 24kHz rate.
+Voice input uses OpenAI's Whisper for transcription. Same API key as everything else.
 
 ---
 
@@ -235,116 +165,56 @@ WebSocket → base64 → PCM16 → Float32 → AudioBuffer → speaker
 
 - **Vite** + **React 19** + **TypeScript**
 - **Tailwind CSS 4** + **shadcn/ui** (Radix primitives)
-- **Octokit** — GitHub API client (browser-compatible)
-- **Web Speech API** — voice input (browser-native)
-- **OpenAI API** — direct fetch calls
+- **Octokit** — GitHub API client
+- **OpenAI API** — transcription, chat completions with function calling
 
-No backend required. Static hosting (GitHub Pages, Vercel, Netlify) works fine.
-
----
-
-## Repo Style Instructions
-
-When writing content, AI checks for instruction files in parent directories:
-
-- `AGENTS.md` — agent behavior, tone, formatting rules
-- `STYLE.md` — writing style guide
-- `README.md` — context about the folder's purpose
-
-This ensures generated content matches the conventions of that part of the repository.
-
----
-
-## Setup Guide
-
-### For People New to GitHub
-
-<details>
-<summary><strong>Step 1: Create a GitHub Account</strong></summary>
-
-1. Go to [github.com](https://github.com)
-2. Click "Sign up"
-3. Choose a username, enter your email, create a password
-4. Verify your email address
-
-</details>
-
-<details>
-<summary><strong>Step 2: Create a Repository</strong></summary>
-
-1. Log into GitHub
-2. Click **+** → "New repository"
-3. Name it (e.g., `notes`, `brain`, `knowledge`)
-4. Choose **Private**
-5. Check "Add a README file"
-6. Click "Create repository"
-
-</details>
-
-<details>
-<summary><strong>Step 3: Create a Personal Access Token</strong></summary>
-
-1. Go to [github.com/settings/tokens](https://github.com/settings/tokens)
-2. Click "Generate new token" → "Fine-grained token"
-3. Name: "ai-memory"
-4. Repository access: select your notes repo
-5. Permissions: Contents (read/write)
-6. Generate and **copy immediately**
-
-</details>
-
-### For People New to OpenAI
-
-<details>
-<summary><strong>Getting an API Key</strong></summary>
-
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Sign up or log in
-3. Go to API Keys → "Create new secret key"
-4. Copy immediately
-
-**Cost:** Pay-per-use. Memory capture typically costs pennies per session.
-
-</details>
+No backend. Static hosting works (GitHub Pages, Vercel, Netlify). All API calls go directly from your browser.
 
 ---
 
 ## Development
 
 ```bash
-cd ai-memory
 npm install
 npm run dev
 ```
 
-Dev server: http://localhost:3075 (also accessible on LAN)
+Dev server runs on port 3075 with HTTPS (required for microphone access on LAN).
+
+Access locally: https://localhost:3075
+Access from network: https://[your-ip]:3075
 
 ---
 
 ## Status
 
-| Component | Status |
-|-----------|--------|
-| Project scaffold | ✅ Done |
-| Voice interface design | ✅ Done (port from whiteboard) |
-| Credentials UI | 🔲 Todo |
-| Repository selection | 🔲 Todo |
-| Scope selection | 🔲 Todo |
-| Topic matching | 🔲 Todo |
-| Voice input (pipeline) | 🔲 Todo — port `VoiceAgent` |
-| Voice input (realtime) | 🔲 Todo — port `ConversationAgent` |
-| Content capture | 🔲 Todo |
-| AI processing | 🔲 Todo |
-| Result preview | 🔲 Todo |
-| GitHub commit | 🔲 Todo |
+This is a working prototype. Current state:
+
+| Feature | Status |
+|---------|--------|
+| Credentials management | ✅ Working |
+| Model selection | ✅ Working |
+| Repository selection | ✅ Working |
+| Repository browser + scope | ✅ Working |
+| Topic finding with AI tools | ✅ Working |
+| Voice input (all fields) | ✅ Working |
+| Content generation | ✅ Working |
+| Update analysis + placement | ✅ Working |
+| Preview + inline editing | ✅ Working |
+| Feedback + revision loop | ✅ Working |
+| GitHub commit | ✅ Working |
+| Working box progress display | ✅ Working |
+| Web search (Brave) | ✅ Working |
+
+**Not yet implemented:**
+- Realtime API voice (continuous conversation)
+- Password encryption for stored keys
+- Offline support
 
 ---
 
 ## Why This Exists
 
-Most note apps lock your data in proprietary formats. Most AI assistants keep conversations on their servers. This gives you:
+Note-taking apps trap your data. AI assistants keep your conversations on their servers. This experiment asks: what if you could have AI assistance while keeping full ownership?
 
-- **Your data in your repo** — plain markdown, forever yours
-- **Version history** — git tracks every change
-- **AI assistance** — without giving up ownership
-- **No vendor lock-in** — switch providers anytime
+Your memories live in *your* GitHub repo. Plain markdown. Version-controlled forever. The AI helps you write — but the words belong to you.
