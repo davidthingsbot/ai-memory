@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Credentials } from '@/components/Credentials'
 import { ModelSelector } from '@/components/ModelSelector'
 import { RepoSelection, type Repository } from '@/components/RepoSelection'
+import { RepoBrowser, type BrowseScope } from '@/components/RepoBrowser'
 import { TopicFinder, type TopicResult } from '@/components/TopicFinder'
 import { ContentEditor } from '@/components/ContentEditor'
 
@@ -10,6 +11,7 @@ function App() {
   const [hasGitHub, setHasGitHub] = useState(false)
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
   const [topicResult, setTopicResult] = useState<TopicResult | null>(null)
+  const [browseScope, setBrowseScope] = useState<BrowseScope | null>(null)
   const [contentKey, setContentKey] = useState(0) // Key to force reset ContentEditor
 
   const handleCredentialsChange = useCallback((openai: boolean, github: boolean) => {
@@ -19,9 +21,14 @@ function App() {
 
   const handleRepoChange = useCallback((repo: Repository | null) => {
     setSelectedRepo(repo)
-    // Reset topic and content when repo changes
+    // Reset everything when repo changes
     setTopicResult(null)
+    setBrowseScope(null)
     setContentKey(k => k + 1)
+  }, [])
+
+  const handleScopeSelect = useCallback((scope: BrowseScope | null) => {
+    setBrowseScope(scope)
   }, [])
 
   const handleLocationFound = useCallback((result: TopicResult) => {
@@ -62,10 +69,19 @@ function App() {
             <RepoSelection onRepoChange={handleRepoChange} />
           )}
 
-          {/* Step 3: Topic / Location Finding - always visible once repo selected */}
+          {/* Step 3: Browse Repository - optional scope selection */}
+          {selectedRepo && (
+            <RepoBrowser 
+              repoName={selectedRepo.full_name}
+              onScopeSelect={handleScopeSelect}
+            />
+          )}
+
+          {/* Step 4: Topic / Location Finding - always visible once repo selected */}
           {selectedRepo && (
             <TopicFinder 
-              repoName={selectedRepo.full_name} 
+              repoName={selectedRepo.full_name}
+              scope={browseScope}
               onLocationFound={handleLocationFound}
             />
           )}

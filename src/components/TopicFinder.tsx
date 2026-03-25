@@ -7,12 +7,15 @@ import { startRecording, stopRecording, cancelRecording, transcribeAudio } from 
 import { MessageSquare, Search, FileText, FilePlus, Loader2, Check, RotateCcw, Mic } from 'lucide-react'
 import { WorkingBox } from './WorkingBox'
 
+import type { BrowseScope } from './RepoBrowser'
+
 interface TopicFinderProps {
   repoName: string
+  scope?: BrowseScope | null
   onLocationFound?: (result: TopicResult) => void
 }
 
-export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
+export function TopicFinder({ repoName, scope, onLocationFound }: TopicFinderProps) {
   const [topic, setTopic] = useState('')
   const [loading, setLoading] = useState(false)
   const [steps, setSteps] = useState<string[]>([])
@@ -40,7 +43,7 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
     setError(null)
 
     try {
-      const location = await findTopicLocation(topicToSearch, addStep)
+      const location = await findTopicLocation(topicToSearch, addStep, scope)
       addStep('✓ Analysis complete')
       setResult(location)
       onLocationFound?.(location)
@@ -165,7 +168,15 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
           )}
         </CardTitle>
         <CardDescription>
-          Describe what you want to document. AI will find the best location in <code className="text-xs">{repoName}</code>.
+          Describe what you want to document.
+          {scope ? (
+            <span className="block mt-1">
+              Scoped to: <code className="text-xs">{scope.path}</code>
+              {scope.type === 'selection' && ' (selection)'}
+            </span>
+          ) : (
+            <span> AI will find the best location in <code className="text-xs">{repoName}</code>.</span>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

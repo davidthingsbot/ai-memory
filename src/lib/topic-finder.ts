@@ -10,6 +10,13 @@ export interface TopicResult {
   existingContent?: string
 }
 
+export interface BrowseScope {
+  type: 'directory' | 'file' | 'selection'
+  path: string
+  selectedText?: string
+  fileContent?: string
+}
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
@@ -151,7 +158,8 @@ Be thorough but efficient. Use the cached information below when available.`
 
 export async function findTopicLocation(
   topicDescription: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  scope?: BrowseScope | null
 ): Promise<TopicResult> {
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
@@ -169,12 +177,34 @@ export async function findTopicLocation(
     await prefetchRepoStructure()
   }
 
+  // Build user message with scope context
+  let userContent = `Repository: ${repo.full_name}\n\nTopic to document: "${topicDescription}"`
+  
+  if (scope) {
+    userContent += `\n\n## Scope Provided by User`
+    if (scope.type === 'directory') {
+      userContent += `\nThe user has selected the directory: ${scope.path}`
+      userContent += `\nFocus your search within this directory or create new content here.`
+    } else if (scope.type === 'file') {
+      userContent += `\nThe user has selected the file: ${scope.path}`
+      if (scope.fileContent) {
+        userContent += `\n\nFile content:\n\`\`\`\n${scope.fileContent.slice(0, 2000)}\n\`\`\``
+      }
+      userContent += `\nThis file is likely where the content should go (as an update).`
+    } else if (scope.type === 'selection') {
+      userContent += `\nThe user has selected a passage from: ${scope.path}`
+      if (scope.selectedText) {
+        userContent += `\n\nSelected text:\n> ${scope.selectedText}`
+      }
+      userContent += `\nThis selection indicates where or how the new content relates.`
+    }
+  }
+  
+  userContent += `\n\nPlease find the best location for this content.${ctx.repoStructure ? ' The repository structure is already cached above, so you may not need to call get_repo_structure unless you need more detail.' : ''}`
+
   const messages: ChatMessage[] = [
     { role: 'system', content: buildSystemPrompt(ctx) },
-    { 
-      role: 'user', 
-      content: `Repository: ${repo.full_name}\n\nTopic to document: "${topicDescription}"\n\nPlease find the best location for this content.${ctx.repoStructure ? ' The repository structure is already cached above, so you may not need to call get_repo_structure unless you need more detail.' : ''}`
-    },
+    { role: 'user', content: userContent },
   ]
 
   const maxIterations = 10
