@@ -9,6 +9,7 @@ interface MicButtonProps {
   onRecordingChange: (recording: boolean) => void
   size?: 'sm' | 'default' | 'icon'
   className?: string
+  showStatus?: boolean // Show status text next to button
 }
 
 export function MicButton({
@@ -18,6 +19,7 @@ export function MicButton({
   onRecordingChange,
   size = 'icon',
   className = '',
+  showStatus = true,
 }: MicButtonProps) {
   const isHoldMode = useRef(false)
   const recordStartTime = useRef(0)
@@ -63,25 +65,39 @@ export function MicButton({
     ? 'bg-red-600 hover:bg-red-700 text-white border-red-600 shadow-lg shadow-red-500/30'
     : 'bg-red-100 hover:bg-red-200 text-red-600 border-red-200 dark:bg-red-950 dark:hover:bg-red-900 dark:text-red-400 dark:border-red-800'
 
+  // Status text
+  const statusText = transcribing 
+    ? 'Transcribing...' 
+    : recording 
+      ? 'Recording... tap to stop' 
+      : null
+
   return (
-    <Button
-      variant="outline"
-      size={size}
-      disabled={disabled || transcribing}
-      onClick={handleClick}
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-      onTouchStart={(e) => { e.preventDefault(); handleMouseDown(); handleClick() }}
-      onTouchEnd={(e) => { e.preventDefault(); handleMouseUp() }}
-      className={`${baseClasses} ${colorClasses} ${recording ? 'animate-pulse' : ''} ${className}`}
-      title="Tap to start/stop or hold to record"
-    >
-      {transcribing ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Mic className="h-4 w-4" />
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size={size}
+        disabled={disabled || transcribing}
+        onClick={handleClick}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onTouchStart={(e) => { e.preventDefault(); handleMouseDown(); handleClick() }}
+        onTouchEnd={(e) => { e.preventDefault(); handleMouseUp() }}
+        className={`${baseClasses} ${colorClasses} ${recording ? 'animate-pulse' : ''} ${className}`}
+        title="Tap to start/stop or hold to record"
+      >
+        {transcribing ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Mic className="h-4 w-4" />
+        )}
+      </Button>
+      {showStatus && statusText && (
+        <span className="text-xs text-muted-foreground animate-pulse">
+          {statusText}
+        </span>
       )}
-    </Button>
+    </div>
   )
 }

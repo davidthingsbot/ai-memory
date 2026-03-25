@@ -248,9 +248,6 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
                 onRecordingChange={handleContentRecordingChange}
                 size="sm"
               />
-              <span className="text-xs text-muted-foreground">
-                {recording ? 'Recording...' : transcribing ? 'Transcribing...' : ''}
-              </span>
 
               <Button
                 onClick={handleGenerate}
