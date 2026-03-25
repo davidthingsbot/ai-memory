@@ -285,20 +285,26 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           <>
             <div className="space-y-2">
               <div className="relative">
+                {/* Hidden textarea for actual editing */}
                 <textarea
                   className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
                   placeholder="Ramble your thoughts... Don't worry about structure, just get the information down."
-                  value={contentTranscription.isRecording 
-                    ? rawContent + (cursorVisible ? ' ●▌' : ' ●') 
-                    : rawContent}
-                  onChange={(e) => {
-                    // Strip cursor indicator if present
-                    const value = e.target.value.replace(/ ●▌$/, '').replace(/ ●$/, '')
-                    setRawContent(value)
-                  }}
+                  value={rawContent}
+                  onChange={(e) => setRawContent(e.target.value)}
                   disabled={contentTranscription.isConnecting}
                   style={contentTranscription.isRecording ? { caretColor: 'transparent' } : undefined}
                 />
+                {/* Overlay with blinking cursor at text end while recording */}
+                {contentTranscription.isRecording && (
+                  <div 
+                    className="absolute inset-0 pointer-events-none p-3 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden"
+                    aria-hidden="true"
+                  >
+                    <span className="invisible">{rawContent}</span>
+                    <span className={cursorVisible ? 'opacity-100' : 'opacity-0'}>▌</span>
+                    <span className="text-red-500">●</span>
+                  </div>
+                )}
               </div>
             </div>
 
