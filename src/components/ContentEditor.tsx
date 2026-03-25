@@ -270,13 +270,22 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         {stage === 'input' && (
           <>
             <div className="space-y-2">
-              <textarea
-                className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm"
-                placeholder="Ramble your thoughts... Don't worry about structure, just get the information down."
-                value={rawContent}
-                onChange={(e) => setRawContent(e.target.value)}
-                disabled={contentTranscription.isConnecting}
-              />
+              <div className="relative">
+                <textarea
+                  className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
+                  placeholder="Ramble your thoughts... Don't worry about structure, just get the information down."
+                  value={rawContent}
+                  onChange={(e) => setRawContent(e.target.value)}
+                  disabled={contentTranscription.isConnecting}
+                />
+                {/* Blinking cursor indicator while recording */}
+                {contentTranscription.isRecording && (
+                  <div className="absolute bottom-3 right-3 flex items-center gap-1.5 text-xs text-red-500">
+                    <span className="animate-pulse">●</span>
+                    <span className="animate-blink">▌</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-2 flex-wrap">
@@ -472,8 +481,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
             </div>
 
             <Button onClick={handleReset} className="w-full">
-              <FilePlus className="h-4 w-4 mr-2" />
-              Add Another Entry
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Restart
             </Button>
           </div>
         )}
