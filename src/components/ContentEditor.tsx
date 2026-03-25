@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,18 +39,36 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
   const [filesChanged, setFilesChanged] = useState(0)
 
+  // Refs for textarea cursor position
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const feedbackInputRef = useRef<HTMLInputElement>(null)
+  
+  // Track the base text and insert position for content
+  const contentBaseTextRef = useRef<string>('')
+  const contentInsertPosRef = useRef<number>(0)
+  
+  // Track the base text and insert position for feedback
+  const feedbackBaseTextRef = useRef<string>('')
+  const feedbackInsertPosRef = useRef<number>(0)
+
   // Real-time transcription for content input
   const contentTranscription = useRealtimeTranscription({
-    onTranscriptUpdate: (text) => {
-      // Replace content with streaming transcript while recording
-      setRawContent(text)
+    onTranscriptInsert: (newText, insertPos) => {
+      // Insert new text at the original cursor position
+      const base = contentBaseTextRef.current
+      const before = base.slice(0, insertPos)
+      const after = base.slice(insertPos)
+      setRawContent(before + newText + after)
     },
   })
 
   // Real-time transcription for feedback input
   const feedbackTranscription = useRealtimeTranscription({
-    onTranscriptUpdate: (text) => {
-      setFeedback(text)
+    onTranscriptInsert: (newText, insertPos) => {
+      const base = feedbackBaseTextRef.current
+      const before = base.slice(0, insertPos)
+      const after = base.slice(insertPos)
+      setFeedback(before + newText + after)
     },
   })
 
@@ -74,11 +92,15 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     if (isRecording) {
       setError(null)
-      contentTranscription.startRecording()
+      // Save current text and cursor position
+      contentBaseTextRef.current = rawContent
+      const cursorPos = contentTextareaRef.current?.selectionStart ?? rawContent.length
+      contentInsertPosRef.current = cursorPos
+      contentTranscription.startRecording(cursorPos)
     } else {
       contentTranscription.stopRecording()
     }
-  }, [stage, contentTranscription])
+  }, [stage, contentTranscription, rawContent])
 
   // Feedback voice recording handler
   const handleFeedbackRecordingChange = useCallback((isRecording: boolean) => {
@@ -86,7 +108,11 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     if (isRecording) {
       setError(null)
-      feedbackTranscription.startRecording()
+      // Save current text and cursor position
+      feedbackBaseTextRef.current = feedback
+      const cursorPos = feedbackInputRef.current?.selectionStart ?? feedback.length
+      feedbackInsertPosRef.current = cursorPos
+      feedbackTranscription.startRecording(cursorPos)
     } else {
       feedbackTranscription.stopRecording()
     }
@@ -225,8 +251,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           <>
             <div className="space-y-2">
               <div className="relative">
-                {/* Hidden textarea for actual editing */}
                 <textarea
+                  ref={contentTextareaRef}
                   className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
                   placeholder={contentTranscription.isRecording ? '' : "Ramble your thoughts... Don't worry about structure, just get the information down."}
                   value={rawContent}
@@ -318,6 +344,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   className="shrink-0"
                 />
                 <Input
+                  ref={feedbackInputRef}
                   placeholder="e.g., Also add a section about..."
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}

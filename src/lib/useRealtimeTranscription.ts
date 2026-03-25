@@ -3,7 +3,12 @@ import { createTranscriptionSession, type TranscriptionSession } from './realtim
 import { getOpenAIKey } from '@/components/Credentials'
 
 interface UseRealtimeTranscriptionOptions {
-  onTranscriptUpdate?: (fullText: string) => void
+  /**
+   * Called when transcript updates during recording.
+   * @param newText - The newly transcribed text for this session
+   * @param insertPosition - The cursor position where text should be inserted
+   */
+  onTranscriptInsert?: (newText: string, insertPosition: number) => void
 }
 
 interface UseRealtimeTranscriptionReturn {
@@ -11,19 +16,20 @@ interface UseRealtimeTranscriptionReturn {
   isConnecting: boolean
   isSpeaking: boolean
   error: string | null
-  startRecording: () => void
+  startRecording: (cursorPosition: number) => void
   stopRecording: () => void
 }
 
 /**
  * Hook for real-time transcription using OpenAI Realtime API.
  * 
- * @param onTranscriptUpdate - Called with the accumulated transcript as it grows
+ * Inserts text at the specified cursor position, preserving existing content.
+ * Call startRecording(cursorPosition) with the textarea's selectionStart.
  */
 export function useRealtimeTranscription(
   options: UseRealtimeTranscriptionOptions = {}
 ): UseRealtimeTranscriptionReturn {
-  const { onTranscriptUpdate } = options
+  const { onTranscriptInsert } = options
   
   const [isRecording, setIsRecording] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
@@ -31,13 +37,14 @@ export function useRealtimeTranscription(
   const [error, setError] = useState<string | null>(null)
   
   const sessionRef = useRef<TranscriptionSession | null>(null)
-  const transcriptRef = useRef<string>('')
-  const onTranscriptUpdateRef = useRef(onTranscriptUpdate)
+  const transcriptRef = useRef<string>('')           // Accumulated transcript for this recording session
+  const insertPositionRef = useRef<number>(0)        // Where to insert in the textarea
+  const onTranscriptInsertRef = useRef(onTranscriptInsert)
   
   // Keep callback ref updated
-  onTranscriptUpdateRef.current = onTranscriptUpdate
+  onTranscriptInsertRef.current = onTranscriptInsert
 
-  const startRecording = useCallback(() => {
+  const startRecording = useCallback((cursorPosition: number) => {
     const apiKey = getOpenAIKey()
     if (!apiKey) {
       setError('No OpenAI API key configured')
@@ -46,7 +53,8 @@ export function useRealtimeTranscription(
 
     setError(null)
     setIsConnecting(true)
-    transcriptRef.current = ''
+    transcriptRef.current = ''                    // Reset transcript for THIS session
+    insertPositionRef.current = cursorPosition    // Remember cursor position
 
     const session = createTranscriptionSession(apiKey, {
       onConnected: () => {
@@ -71,12 +79,14 @@ export function useRealtimeTranscription(
       },
       onTranscriptDelta: (delta) => {
         transcriptRef.current += delta
-        onTranscriptUpdateRef.current?.(transcriptRef.current)
+        // Send the new text and where to insert it
+        onTranscriptInsertRef.current?.(transcriptRef.current, insertPositionRef.current)
       },
       onTranscriptComplete: () => {
         // Utterance complete - add a space before the next one
         if (transcriptRef.current && !transcriptRef.current.endsWith(' ')) {
           transcriptRef.current += ' '
+          onTranscriptInsertRef.current?.(transcriptRef.current, insertPositionRef.current)
         }
       },
     })
