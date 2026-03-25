@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { generateChangeSet, reviseChangeSet, type ChangeSet } from '@/lib/changeset-generator'
 import { commitChangeSet } from '@/lib/github-commit'
+import { clearContext, prefetchRepoStructure } from '@/lib/topic-finder'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { 
   Sparkles, RotateCcw, Check, 
@@ -195,6 +196,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       
       if (result.success) {
         addStep(`✓ Committed ${result.filesChanged} file(s)`)
+        
+        // Refresh repo context since files changed
+        addStep('Refreshing repository context...')
+        clearContext()
+        await prefetchRepoStructure()
+        addStep('✓ Context updated')
+        
         setCommitUrl(result.url || null)
         setFilesChanged(result.filesChanged)
         setIsWorking(false)
