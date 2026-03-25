@@ -49,10 +49,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   // Track the base text and insert position for content
   const contentBaseTextRef = useRef<string>('')
   const contentInsertPosRef = useRef<number>(0)
+  // Track cursor position continuously (updated on every selection change)
+  const lastContentCursorPosRef = useRef<number>(0)
   
   // Track the base text and insert position for feedback
   const feedbackBaseTextRef = useRef<string>('')
   const feedbackInsertPosRef = useRef<number>(0)
+  const lastFeedbackCursorPosRef = useRef<number>(0)
 
   // Real-time transcription for content input
   const contentTranscription = useRealtimeTranscription({
@@ -106,22 +109,36 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     return () => clearInterval(interval)
   }, [contentTranscription.isRecording])
 
+  // Track cursor position in content textarea
+  const handleContentCursorChange = useCallback(() => {
+    if (contentTextareaRef.current) {
+      lastContentCursorPosRef.current = contentTextareaRef.current.selectionStart
+    }
+  }, [])
+
   // Content voice recording handler
   const handleContentRecordingChange = useCallback((isRecording: boolean) => {
     if (stage !== 'input') return
     
     if (isRecording) {
       setError(null)
-      // Save current text and cursor position directly from DOM to avoid stale closure
-      const currentText = contentTextareaRef.current?.value ?? ''
-      const cursorPos = contentTextareaRef.current?.selectionStart ?? currentText.length
+      // Use the last tracked cursor position (captured before button click stole focus)
+      const currentText = contentTextareaRef.current?.value ?? rawContent
+      const cursorPos = lastContentCursorPosRef.current
       contentBaseTextRef.current = currentText
       contentInsertPosRef.current = cursorPos
       contentTranscription.startRecording(cursorPos)
     } else {
       contentTranscription.stopRecording()
     }
-  }, [stage, contentTranscription])
+  }, [stage, contentTranscription, rawContent])
+
+  // Track cursor position in feedback input
+  const handleFeedbackCursorChange = useCallback(() => {
+    if (feedbackInputRef.current) {
+      lastFeedbackCursorPosRef.current = feedbackInputRef.current.selectionStart ?? 0
+    }
+  }, [])
 
   // Feedback voice recording handler
   const handleFeedbackRecordingChange = useCallback((isRecording: boolean) => {
@@ -129,16 +146,16 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     if (isRecording) {
       setError(null)
-      // Save current text and cursor position directly from DOM
-      const currentText = feedbackInputRef.current?.value ?? ''
-      const cursorPos = feedbackInputRef.current?.selectionStart ?? currentText.length
+      // Use the last tracked cursor position
+      const currentText = feedbackInputRef.current?.value ?? feedback
+      const cursorPos = lastFeedbackCursorPosRef.current
       feedbackBaseTextRef.current = currentText
       feedbackInsertPosRef.current = cursorPos
       feedbackTranscription.startRecording(cursorPos)
     } else {
       feedbackTranscription.stopRecording()
     }
-  }, [stage, feedbackTranscription])
+  }, [stage, feedbackTranscription, feedback])
 
   const addStep = useCallback((step: string) => {
     setSteps(prev => [...prev, step])
@@ -300,7 +317,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
                   placeholder={contentTranscription.isRecording ? '' : "Ramble your thoughts... Don't worry about structure, just get the information down."}
                   value={rawContent}
-                  onChange={(e) => setRawContent(e.target.value)}
+                  onChange={(e) => {
+                    setRawContent(e.target.value)
+                    handleContentCursorChange()
+                  }}
+                  onSelect={handleContentCursorChange}
+                  onClick={handleContentCursorChange}
+                  onKeyUp={handleContentCursorChange}
                   disabled={contentTranscription.isConnecting}
                   style={contentTranscription.isRecording ? { caretColor: 'transparent' } : undefined}
                 />
@@ -400,7 +423,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   ref={feedbackInputRef}
                   placeholder="e.g., Also add a section about..."
                   value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
+                  onChange={(e) => {
+                    setFeedback(e.target.value)
+                    handleFeedbackCursorChange()
+                  }}
+                  onSelect={handleFeedbackCursorChange}
+                  onClick={handleFeedbackCursorChange}
+                  onKeyUp={handleFeedbackCursorChange}
                   onKeyDown={(e) => e.key === 'Enter' && feedback.trim() && handleRevise()}
                   disabled={feedbackTranscription.isRecording || feedbackTranscription.isConnecting}
                 />
