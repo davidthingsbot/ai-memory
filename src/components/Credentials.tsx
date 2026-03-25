@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Check, Eye, EyeOff, Key, GitBranch, Search, Plus, Trash2 } from 'lucide-react'
+import { Check, Eye, EyeOff, Key, GitBranch, Search, Plus } from 'lucide-react'
 
 const STORAGE_KEY_OPENAI = 'ai-memory:openai-key'
 const STORAGE_KEY_GITHUB_TOKENS = 'ai-memory:github-tokens'
@@ -87,6 +87,7 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
       localStorage.setItem(STORAGE_KEY_GITHUB_TOKENS, JSON.stringify(newTokens))
       setNewTokenLabel('')
       setNewTokenValue('')
+      setShowNewToken(false)
       setTokenSaved(true)
       setTimeout(() => setTokenSaved(false), 2000)
       onCredentialsChange?.(hasStoredOpenAI, true)
@@ -198,7 +199,7 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
             <GitBranch className="h-4 w-4" />
-            GitHub Personal Access Tokens
+            GitHub Personal Access Token{githubTokens.length !== 1 ? 's' : ''}
             {githubTokens.length > 0 && (
               <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                 <Check className="h-3 w-3" /> {githubTokens.length} saved
@@ -206,57 +207,83 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
             )}
           </Label>
           
-          {/* List of saved tokens */}
-          {githubTokens.length > 0 && (
-            <div className="space-y-2 mb-3">
+          {githubTokens.length > 0 ? (
+            // Show saved tokens with Add button
+            <div className="space-y-2">
               {githubTokens.map((t, index) => (
-                <div key={index} className="flex items-center gap-2 p-2 rounded-md border bg-muted/30">
-                  <span className="text-sm font-medium flex-1">{t.label}</span>
-                  <code className="text-xs text-muted-foreground">
-                    {t.token.slice(0, 8)}...{t.token.slice(-4)}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeGitHubToken(index)}
-                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
+                <div key={index} className="flex gap-2">
+                  <Input
+                    type="password"
+                    value="••••••••••••••••••••••••••••••••"
+                    disabled
+                    className="flex-1 font-mono"
+                  />
+                  <span className="flex items-center text-xs text-muted-foreground min-w-[60px]">
+                    {t.label}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => removeGitHubToken(index)}>
+                    Clear
                   </Button>
                 </div>
               ))}
+              
+              {/* Add button or add form */}
+              {!showNewToken ? (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setShowNewToken(true)}
+                  className="w-full"
+                >
+                  <Plus className="h-4 w-4 mr-1" /> Add Another Token
+                </Button>
+              ) : (
+                <div className="flex gap-2 pt-2 border-t">
+                  <Input
+                    placeholder="Label"
+                    value={newTokenLabel}
+                    onChange={(e) => setNewTokenLabel(e.target.value)}
+                    className="w-24"
+                  />
+                  <Input
+                    type="password"
+                    placeholder="ghp_... or github_pat_..."
+                    value={newTokenValue}
+                    onChange={(e) => setNewTokenValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addGitHubToken()}
+                    className="flex-1 font-mono"
+                  />
+                  <Button onClick={addGitHubToken} disabled={!newTokenValue.trim()}>
+                    {tokenSaved ? <Check className="h-4 w-4" /> : 'Add'}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setShowNewToken(false); setNewTokenLabel(''); setNewTokenValue('') }}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </div>
-          )}
-
-          {/* Add new token form */}
-          <div className="flex gap-2">
-            <Input
-              placeholder="Label (e.g., Personal, Work)"
-              value={newTokenLabel}
-              onChange={(e) => setNewTokenLabel(e.target.value)}
-              className="w-32"
-            />
-            <div className="relative flex-1">
+          ) : (
+            // No tokens yet - show add form directly
+            <div className="flex gap-2">
               <Input
-                type={showNewToken ? 'text' : 'password'}
+                placeholder="Label (e.g., Personal)"
+                value={newTokenLabel}
+                onChange={(e) => setNewTokenLabel(e.target.value)}
+                className="w-32"
+              />
+              <Input
+                type="password"
                 placeholder="ghp_... or github_pat_..."
                 value={newTokenValue}
                 onChange={(e) => setNewTokenValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addGitHubToken()}
-                className="pr-10 font-mono"
+                className="flex-1 font-mono"
               />
-              <button
-                type="button"
-                onClick={() => setShowNewToken(!showNewToken)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showNewToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+              <Button onClick={addGitHubToken} disabled={!newTokenValue.trim()}>
+                {tokenSaved ? <Check className="h-4 w-4" /> : 'Save'}
+              </Button>
             </div>
-            <Button onClick={addGitHubToken} disabled={!newTokenValue.trim()}>
-              {tokenSaved ? <Check className="h-4 w-4" /> : <><Plus className="h-4 w-4 mr-1" /> Add</>}
-            </Button>
-          </div>
+          )}
 
           <p className="text-xs text-muted-foreground">
             Get yours at{' '}
@@ -268,7 +295,7 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
             >
               github.com/settings/tokens
             </a>
-            {' '}— needs <code className="text-xs">repo</code> scope. Add multiple tokens to access repos from different accounts.
+            {' '}— needs <code className="text-xs">repo</code> scope
           </p>
         </div>
 
