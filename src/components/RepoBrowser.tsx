@@ -215,7 +215,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
         <CardTitle className="flex items-center justify-between">
           <span className="flex items-center gap-2">
             <FolderOpen className="h-5 w-5" />
-            Browse Repository
+            Context
           </span>
           {scope && (
             <Button variant="ghost" size="sm" onClick={clearScope}>
