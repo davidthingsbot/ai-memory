@@ -12,6 +12,7 @@ interface RepoBrowserProps {
   repoName?: string
   onScopeSelect?: (scope: BrowseScope | null) => void
   onScopeChange?: () => void
+  refreshPending?: boolean
 }
 
 export interface BrowseScope {
@@ -31,7 +32,7 @@ interface TreeNode extends DirectoryEntry {
   loading?: boolean
 }
 
-export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) {
+export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: RepoBrowserProps) {
   const [tree, setTree] = useState<TreeNode[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -386,7 +387,14 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
           )}
         </CardTitle>
         <CardDescription>
-          Browse and select context for your content.
+          {refreshPending ? (
+            <span className="text-amber-600 dark:text-amber-400 flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Update pending — refreshing in a few seconds...
+            </span>
+          ) : (
+            'Browse and select context for your content.'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

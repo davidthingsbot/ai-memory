@@ -18,7 +18,7 @@ import type { BrowseScope } from './RepoBrowser'
 interface ContentEditorProps {
   scope: BrowseScope | null
   repoName: string
-  onComplete?: () => void
+  onComplete?: (wasCommit?: boolean) => void
 }
 
 type Stage = 'input' | 'generating' | 'preview' | 'committing' | 'done'
@@ -280,6 +280,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
 
   // Reset to start new entry
   const handleReset = useCallback(() => {
+    const wasCommit = stage === 'done' // We're in done stage means commit succeeded
     setRawContent('')
     setChangeSet(null)
     setFeedback('')
@@ -290,8 +291,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setWorkStartTime(null)
     setIsWorking(false)
     setStage('input')
-    onComplete?.()
-  }, [onComplete])
+    onComplete?.(wasCommit)
+  }, [onComplete, stage])
 
   // Back to editing input
   const handleBackToInput = useCallback(() => {

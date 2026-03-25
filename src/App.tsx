@@ -11,6 +11,8 @@ function App() {
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
   const [browseScope, setBrowseScope] = useState<BrowseScope | null>(null)
   const [contentKey, setContentKey] = useState(0)
+  const [browserKey, setBrowserKey] = useState(0)
+  const [browserRefreshPending, setBrowserRefreshPending] = useState(false)
 
   // Refs for scrolling
   const credentialsRef = useRef<HTMLDivElement>(null)
@@ -71,10 +73,19 @@ function App() {
     setContentKey(k => k + 1)
   }, [])
 
-  const handleContentComplete = useCallback(() => {
+  const handleContentComplete = useCallback((wasCommit?: boolean) => {
     // Reset content and scroll back to context for another entry
     setContentKey(k => k + 1)
     setBrowseScope(null)
+    
+    // If there was a commit, schedule a browser refresh after GitHub processes
+    if (wasCommit) {
+      setBrowserRefreshPending(true)
+      setTimeout(() => {
+        setBrowserRefreshPending(false)
+        setBrowserKey(k => k + 1)
+      }, 6000) // 6 seconds for GitHub to process
+    }
     
     // Scroll to context section
     setTimeout(() => {
@@ -114,9 +125,11 @@ function App() {
           {selectedRepo && (
             <div ref={contextRef}>
               <RepoBrowser 
+                key={browserKey}
                 repoName={selectedRepo.full_name}
                 onScopeSelect={handleScopeSelect}
                 onScopeChange={handleScopeChange}
+                refreshPending={browserRefreshPending}
               />
             </div>
           )}
