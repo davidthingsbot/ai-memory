@@ -1,5 +1,5 @@
 import { Octokit } from 'octokit'
-import { getBraveKey } from '@/components/Credentials'
+import { getSerperKey } from '@/components/Credentials'
 import { getSelectedRepo, getSelectedRepoToken } from '@/components/RepoSelection'
 
 export interface DirectoryEntry {
@@ -163,33 +163,34 @@ export async function getRepoTree(maxDepth: number = 3): Promise<DirectoryEntry[
  * Search the web using Brave Search API
  */
 export async function webSearch(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
-  const apiKey = getBraveKey()
+  const apiKey = getSerperKey()
   if (!apiKey) {
-    throw new Error('Brave Search API key not configured')
+    throw new Error('Serper API key not configured')
   }
 
-  // Use Vite proxy in dev to avoid CORS issues
-  // In production on GitHub Pages, this won't work (no server) - would need serverless function
-  const isDev = import.meta.env.DEV
-  const baseUrl = isDev ? '/api/brave' : 'https://api.search.brave.com'
-
-  const response = await fetch(`${baseUrl}/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`, {
+  // Serper.dev supports CORS - works directly from browser
+  const response = await fetch('https://google.serper.dev/search', {
+    method: 'POST',
     headers: {
-      'Accept': 'application/json',
-      'X-Subscription-Token': apiKey,
+      'Content-Type': 'application/json',
+      'X-API-KEY': apiKey,
     },
+    body: JSON.stringify({
+      q: query,
+      num: 5,
+    }),
   })
 
   if (!response.ok) {
-    throw new Error(`Brave Search error: ${response.status}`)
+    throw new Error(`Serper Search error: ${response.status}`)
   }
 
   const data = await response.json()
   
-  return (data.web?.results || []).map((r: any) => ({
+  return (data.organic || []).map((r: any) => ({
     title: r.title,
-    url: r.url,
-    snippet: r.description,
+    url: r.link,
+    snippet: r.snippet,
   }))
 }
 

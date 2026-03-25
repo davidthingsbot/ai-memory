@@ -2,7 +2,7 @@
  * Text Tools - AI-powered text manipulation
  */
 
-import { getOpenAIKey, getBraveKey } from '@/components/Credentials'
+import { getOpenAIKey, getSerperKey } from '@/components/Credentials'
 import { getSelectedModel } from '@/components/ModelSelector'
 import { webSearch } from './github-tools'
 
@@ -75,11 +75,11 @@ export async function improveText(
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
 
-  // Check if we have Brave key for web search
-  const hasBraveKey = !!getBraveKey()
+  // Check if we have Serper key for web search
+  const hasSerperKey = !!getSerperKey()
   let researchContext = ''
 
-  if (hasBraveKey) {
+  if (hasSerperKey) {
     onProgress?.('Analyzing text for research topics...')
     
     // First, ask AI what to research

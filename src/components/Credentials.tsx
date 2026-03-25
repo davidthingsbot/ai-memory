@@ -7,7 +7,7 @@ import { Check, Eye, EyeOff, Key, GitBranch, Search, Plus } from 'lucide-react'
 
 const STORAGE_KEY_OPENAI = 'ai-memory:openai-key'
 const STORAGE_KEY_GITHUB_TOKENS = 'ai-memory:github-tokens'
-const STORAGE_KEY_BRAVE = 'ai-memory:brave-key'
+const STORAGE_KEY_SERPER = 'ai-memory:serper-key'
 
 // Legacy key for migration
 const STORAGE_KEY_GITHUB_LEGACY = 'ai-memory:github-pat'
@@ -23,13 +23,13 @@ interface CredentialsProps {
 
 export function Credentials({ onCredentialsChange }: CredentialsProps) {
   const [openaiKey, setOpenaiKey] = useState('')
-  const [braveKey, setBraveKey] = useState('')
+  const [serperKey, setSerperKey] = useState('')
   const [hasStoredOpenAI, setHasStoredOpenAI] = useState(false)
-  const [hasStoredBrave, setHasStoredBrave] = useState(false)
+  const [hasStoredSerper, setHasStoredSerper] = useState(false)
   const [showOpenAI, setShowOpenAI] = useState(false)
-  const [showBrave, setShowBrave] = useState(false)
+  const [showSerper, setShowSerper] = useState(false)
   const [openaiSaved, setOpenaiSaved] = useState(false)
-  const [braveSaved, setBraveSaved] = useState(false)
+  const [serperSaved, setSerperSaved] = useState(false)
 
   // GitHub tokens (multiple)
   const [githubTokens, setGithubTokens] = useState<GitHubToken[]>([])
@@ -41,7 +41,7 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
   // Load stored credentials on mount
   useEffect(() => {
     const storedOpenAI = localStorage.getItem(STORAGE_KEY_OPENAI)
-    const storedBrave = localStorage.getItem(STORAGE_KEY_BRAVE)
+    const storedSerper = localStorage.getItem(STORAGE_KEY_SERPER)
     
     // Load GitHub tokens (with migration from legacy single token)
     let tokens: GitHubToken[] = []
@@ -63,7 +63,7 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
     }
     
     setHasStoredOpenAI(!!storedOpenAI)
-    setHasStoredBrave(!!storedBrave)
+    setHasStoredSerper(!!storedSerper)
     setGithubTokens(tokens)
     onCredentialsChange?.(!!storedOpenAI, tokens.length > 0)
   }, [onCredentialsChange])
@@ -101,13 +101,13 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
     onCredentialsChange?.(hasStoredOpenAI, newTokens.length > 0)
   }
 
-  const saveBraveKey = () => {
-    if (braveKey.trim()) {
-      localStorage.setItem(STORAGE_KEY_BRAVE, braveKey.trim())
-      setHasStoredBrave(true)
-      setBraveKey('')
-      setBraveSaved(true)
-      setTimeout(() => setBraveSaved(false), 2000)
+  const saveSerperKey = () => {
+    if (serperKey.trim()) {
+      localStorage.setItem(STORAGE_KEY_SERPER, serperKey.trim())
+      setHasStoredSerper(true)
+      setSerperKey('')
+      setSerperSaved(true)
+      setTimeout(() => setSerperSaved(false), 2000)
     }
   }
 
@@ -117,9 +117,9 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
     onCredentialsChange?.(false, githubTokens.length > 0)
   }
 
-  const clearBraveKey = () => {
-    localStorage.removeItem(STORAGE_KEY_BRAVE)
-    setHasStoredBrave(false)
+  const clearSerperKey = () => {
+    localStorage.removeItem(STORAGE_KEY_SERPER)
+    setHasStoredSerper(false)
   }
 
   return (
@@ -296,20 +296,20 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
           </p>
         </div>
 
-        {/* Brave Search API Key */}
+        {/* Serper Search API Key */}
         <div className="space-y-2">
-          <Label htmlFor="brave-key" className="flex items-center gap-2">
+          <Label htmlFor="serper-key" className="flex items-center gap-2">
             <Search className="h-4 w-4" />
-            Brave Search API Key
+            Serper Search API Key
             <span className="text-xs text-muted-foreground">(optional)</span>
-            {hasStoredBrave && (
+            {hasStoredSerper && (
               <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                 <Check className="h-3 w-3" /> Saved
               </span>
             )}
           </Label>
           
-          {hasStoredBrave ? (
+          {hasStoredSerper ? (
             <div className="flex gap-2">
               <Input
                 type="password"
@@ -317,7 +317,7 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
                 disabled
                 className="flex-1 font-mono"
               />
-              <Button variant="outline" size="sm" onClick={clearBraveKey}>
+              <Button variant="outline" size="sm" onClick={clearSerperKey}>
                 Clear
               </Button>
             </div>
@@ -325,38 +325,38 @@ export function Credentials({ onCredentialsChange }: CredentialsProps) {
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
-                  id="brave-key"
-                  type={showBrave ? 'text' : 'password'}
+                  id="serper-key"
+                  type={showSerper ? 'text' : 'password'}
                   placeholder="BSA..."
-                  value={braveKey}
-                  onChange={(e) => setBraveKey(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && saveBraveKey()}
+                  value={serperKey}
+                  onChange={(e) => setSerperKey(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && saveSerperKey()}
                   className="pr-10 font-mono"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowBrave(!showBrave)}
+                  onClick={() => setShowSerper(!showSerper)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showBrave ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showSerper ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              <Button onClick={saveBraveKey} disabled={!braveKey.trim()}>
-                {braveSaved ? <Check className="h-4 w-4" /> : 'Save'}
+              <Button onClick={saveSerperKey} disabled={!serperKey.trim()}>
+                {serperSaved ? <Check className="h-4 w-4" /> : 'Save'}
               </Button>
             </div>
           )}
           <p className="text-xs text-muted-foreground">
             Enables web research. Get yours at{' '}
             <a 
-              href="https://brave.com/search/api/" 
+              href="https://serper.dev" 
               target="_blank" 
               rel="noopener noreferrer"
               className="underline hover:text-foreground"
             >
-              brave.com/search/api
+              serper.dev
             </a>
-            {' '}— free tier: 2,000 queries/month
+            {' '}— 2,500 free searches
           </p>
         </div>
       </CardContent>
@@ -385,6 +385,6 @@ export function getGitHubPat(): string | null {
   return tokens.length > 0 ? tokens[0].token : null
 }
 
-export function getBraveKey(): string | null {
-  return localStorage.getItem(STORAGE_KEY_BRAVE)
+export function getSerperKey(): string | null {
+  return localStorage.getItem(STORAGE_KEY_SERPER)
 }

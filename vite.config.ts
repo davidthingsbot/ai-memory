@@ -20,13 +20,5 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 3075,
     host: true,
-    proxy: {
-      // Proxy Brave Search API to avoid CORS issues in dev
-      '/api/brave': {
-        target: 'https://api.search.brave.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/brave/, ''),
-      },
-    },
   },
 }))
