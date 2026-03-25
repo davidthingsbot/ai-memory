@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { generateChangeSet, reviseChangeSet, type ChangeSet } from '@/lib/changeset-generator'
+import { tidyText, improveText } from '@/lib/text-tools'
 import { commitChangeSet } from '@/lib/github-commit'
 import { clearContext, prefetchRepoStructure } from '@/lib/topic-finder'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
@@ -223,6 +224,44 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     }
   }, [rawContent, scope, addStep])
 
+  // Tidy text - fix formatting, spelling, grammar
+  const handleTidy = useCallback(async () => {
+    if (!rawContent.trim()) return
+    
+    setError(null)
+    setSteps([])
+    setWorkStartTime(Date.now())
+    setIsWorking(true)
+    
+    try {
+      const result = await tidyText(rawContent, addStep)
+      setRawContent(result)
+      setIsWorking(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Tidy failed')
+      setIsWorking(false)
+    }
+  }, [rawContent, addStep])
+
+  // Improve text - reorganize, clarify, extend with research
+  const handleImprove = useCallback(async () => {
+    if (!rawContent.trim()) return
+    
+    setError(null)
+    setSteps([])
+    setWorkStartTime(Date.now())
+    setIsWorking(true)
+    
+    try {
+      const result = await improveText(rawContent, addStep)
+      setRawContent(result)
+      setIsWorking(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Improve failed')
+      setIsWorking(false)
+    }
+  }, [rawContent, addStep])
+
   // Revise changeset based on feedback
   const handleRevise = useCallback(async () => {
     if (!feedback.trim() || !changeSet) return
@@ -395,8 +434,26 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
               />
 
               <Button
+                variant="outline"
+                onClick={handleTidy}
+                disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
+                title="Fix spelling, grammar, formatting"
+              >
+                Tidy
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleImprove}
+                disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording}
+                title="Reorganize, clarify, extend with web research"
+              >
+                Improve
+              </Button>
+
+              <Button
                 onClick={handleGenerate}
-                disabled={!rawContent.trim() || contentTranscription.isRecording || contentTranscription.isConnecting}
+                disabled={!rawContent.trim() || isWorking || contentTranscription.isRecording || contentTranscription.isConnecting}
               >
                 <Sparkles className="h-4 w-4 mr-2" />
                 Generate
