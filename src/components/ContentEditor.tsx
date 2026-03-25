@@ -253,6 +253,14 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     }
   }, [rawContent, scope, addStep])
 
+  // Build context for text tools from current scope
+  const getTextContext = useCallback(() => ({
+    filePath: scope?.path,
+    fileContent: scope?.fileContent,
+    selectedText: scope?.selectedText,
+    repoName: repoName,
+  }), [scope, repoName])
+
   // Tidy text - fix formatting, spelling, grammar
   const handleTidy = useCallback(async () => {
     if (!rawContent.trim()) return
@@ -264,14 +272,14 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setIsWorking(true)
     
     try {
-      const result = await tidyText(rawContent, addStep)
+      const result = await tidyText(rawContent, addStep, getTextContext())
       setRawContent(result)
       setIsWorking(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Tidy failed')
       setIsWorking(false)
     }
-  }, [rawContent, addStep, pushUndo])
+  }, [rawContent, addStep, pushUndo, getTextContext])
 
   // Improve text - reorganize, clarify, extend with research
   const handleImprove = useCallback(async () => {
@@ -284,14 +292,14 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setIsWorking(true)
     
     try {
-      const result = await improveText(rawContent, addStep)
+      const result = await improveText(rawContent, addStep, getTextContext())
       setRawContent(result)
       setIsWorking(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Improve failed')
       setIsWorking(false)
     }
-  }, [rawContent, addStep, pushUndo])
+  }, [rawContent, addStep, pushUndo, getTextContext])
 
   // Revise changeset based on feedback
   const handleRevise = useCallback(async () => {

@@ -10,12 +10,20 @@ interface ProgressCallback {
   (step: string): void
 }
 
+interface TextContext {
+  filePath?: string        // Target file path for context
+  fileContent?: string     // Existing file content (for updates)
+  selectedText?: string    // Selected text in file
+  repoName?: string        // Repository name
+}
+
 /**
  * Tidy up text - fix formatting, spelling, grammar without changing content
  */
 export async function tidyText(
   text: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  context?: TextContext
 ): Promise<string> {
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
@@ -35,13 +43,16 @@ export async function tidyText(
           role: 'system',
           content: `You are a text editor. Your job is to clean up the user's text:
 - Fix spelling mistakes
-- Fix grammatical errors
+- Fix grammatical errors  
 - Fix punctuation
 - Improve formatting (paragraphs, lists, etc.)
+- Ensure proper nouns, product names, and technical terms are capitalized correctly
 - Do NOT change the meaning or add new content
 - Do NOT remove any information
 - Keep the same tone and style
 - Use plain ASCII quotes (" and ') only - never curly/smart quotes
+${context?.filePath ? `\nContext: This text is for "${context.filePath}"` : ''}
+${context?.fileContent ? `\nExisting document content (for reference on proper names/terms):\n---\n${context.fileContent.slice(0, 2000)}\n---` : ''}
 
 Return ONLY the cleaned up text, nothing else.`
         },
@@ -70,7 +81,8 @@ Return ONLY the cleaned up text, nothing else.`
  */
 export async function improveText(
   text: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  context?: TextContext
 ): Promise<string> {
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
@@ -125,9 +137,21 @@ export async function improveText(
 
   onProgress?.('Analyzing improvements...')
 
+  // Build context info for the prompt
+  const contextInfo = [
+    context?.filePath ? `Target file: "${context.filePath}"` : '',
+    context?.repoName ? `Repository: ${context.repoName}` : '',
+  ].filter(Boolean).join('\n')
+
+  const existingDocContext = context?.fileContent 
+    ? `\n\nExisting document (for reference on proper names, terms, and style):\n---\n${context.fileContent.slice(0, 3000)}\n---`
+    : ''
+
   const systemPrompt = `You are an expert editor and writing consultant. Analyze the user's text and create a clear SPECIFICATION for how it should be improved. Do NOT rewrite the text yourself.
+${contextInfo ? `\n${contextInfo}` : ''}
 
 Your spec should include:
+- **Proper Names & Terms**: Verify capitalization and consistency of product names, people, technical terms
 - **Structure**: How to reorganize for better flow
 - **Clarity**: Which sections are unclear and how to fix them
 - **Gaps**: What's missing that should be added
@@ -140,9 +164,13 @@ Use plain ASCII quotes (" and ') only.
 
 Return ONLY the improvement specification, not rewritten text.`
 
-  const userContent = researchContext 
-    ? `Text to improve:\n${text}\n\n---\nResearch results:${researchContext}`
-    : text
+  let userContent = `Text to analyze:\n${text}`
+  if (existingDocContext) {
+    userContent += existingDocContext
+  }
+  if (researchContext) {
+    userContent += `\n\n---\nResearch results:${researchContext}`
+  }
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
