@@ -160,6 +160,14 @@ export function MarkdownPreview({
                 alt={alt || ''} 
                 className="max-w-full h-auto rounded-lg"
                 loading="lazy"
+                onError={(e) => {
+                  // Show broken image indicator with path info
+                  const target = e.target as HTMLImageElement
+                  target.style.border = '2px dashed #ef4444'
+                  target.style.padding = '1rem'
+                  target.style.minHeight = '60px'
+                  target.alt = `Failed to load: ${src} → ${resolvedSrc}`
+                }}
                 {...props}
               />
             )

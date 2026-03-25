@@ -50,6 +50,8 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchBaseTextRef = useRef<string>('')
+  const searchInsertPosRef = useRef<number>(0)
   
   // Persistent selection/cursor in file preview
   const [fileSelection, setFileSelection] = useState<{
@@ -68,8 +70,11 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
 
   // Voice transcription for search
   const searchTranscription = useRealtimeTranscription({
-    onTranscriptInsert: (newText) => {
-      setSearchQuery(prev => prev + newText)
+    onTranscriptInsert: (newText, insertPos) => {
+      const base = searchBaseTextRef.current
+      const before = base.slice(0, insertPos)
+      const after = base.slice(insertPos)
+      setSearchQuery(before + newText + after)
     },
   })
 
@@ -98,11 +103,15 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
   // Handle search recording
   const handleSearchRecordingChange = useCallback((recording: boolean) => {
     if (recording) {
-      searchTranscription.startRecording(0)
+      const currentText = searchInputRef.current?.value ?? searchQuery
+      const cursorPos = searchInputRef.current?.selectionStart ?? currentText.length
+      searchBaseTextRef.current = currentText
+      searchInsertPosRef.current = cursorPos
+      searchTranscription.startRecording(cursorPos)
     } else {
       searchTranscription.stopRecording()
     }
-  }, [searchTranscription])
+  }, [searchTranscription, searchQuery])
 
   const loadDirectory = async (path: string) => {
     try {
