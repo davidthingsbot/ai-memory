@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { Credentials } from '@/components/Credentials'
 import { ModelSelector } from '@/components/ModelSelector'
 import { RepoSelection, type Repository } from '@/components/RepoSelection'
@@ -10,7 +10,47 @@ function App() {
   const [hasGitHub, setHasGitHub] = useState(false)
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
   const [browseScope, setBrowseScope] = useState<BrowseScope | null>(null)
-  const [contentKey, setContentKey] = useState(0) // Key to force reset ContentEditor
+  const [contentKey, setContentKey] = useState(0)
+
+  // Refs for scrolling
+  const credentialsRef = useRef<HTMLDivElement>(null)
+  const repoRef = useRef<HTMLDivElement>(null)
+  const contextRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Scroll to the next section that needs attention
+  const scrollToNextSection = useCallback(() => {
+    // Small delay to let DOM update
+    setTimeout(() => {
+      if (!hasOpenAI || !hasGitHub) {
+        credentialsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } else if (!selectedRepo) {
+        repoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } else {
+        // Everything ready - focus on context
+        contextRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 100)
+  }, [hasOpenAI, hasGitHub, selectedRepo])
+
+  // On initial load, scroll to the appropriate section
+  useEffect(() => {
+    scrollToNextSection()
+  }, []) // Only on mount
+
+  // When credentials become ready, scroll to repo selection
+  useEffect(() => {
+    if (hasOpenAI && hasGitHub && !selectedRepo) {
+      repoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [hasOpenAI, hasGitHub, selectedRepo])
+
+  // When repo is selected, scroll to context
+  useEffect(() => {
+    if (selectedRepo) {
+      contextRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [selectedRepo])
 
   const handleCredentialsChange = useCallback((openai: boolean, github: boolean) => {
     setHasOpenAI(openai)
@@ -28,13 +68,18 @@ function App() {
   }, [])
 
   const handleScopeChange = useCallback(() => {
-    // Reset content editor when scope changes
     setContentKey(k => k + 1)
   }, [])
 
   const handleContentComplete = useCallback(() => {
-    // Reset for another entry (keep scope)
+    // Reset content and scroll back to context for another entry
     setContentKey(k => k + 1)
+    setBrowseScope(null)
+    
+    // Scroll to context section
+    setTimeout(() => {
+      contextRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
   }, [])
 
   const credentialsReady = hasOpenAI && hasGitHub
@@ -51,33 +96,41 @@ function App() {
 
         <main className="space-y-6">
           {/* Step 1: Credentials */}
-          <Credentials onCredentialsChange={handleCredentialsChange} />
+          <div ref={credentialsRef}>
+            <Credentials onCredentialsChange={handleCredentialsChange} />
+          </div>
 
           {/* Model Selection */}
           {hasOpenAI && <ModelSelector />}
 
           {/* Step 2: Repository Selection */}
           {credentialsReady && (
-            <RepoSelection onRepoChange={handleRepoChange} />
+            <div ref={repoRef}>
+              <RepoSelection onRepoChange={handleRepoChange} />
+            </div>
           )}
 
           {/* Step 3: Context - optional scope selection */}
           {selectedRepo && (
-            <RepoBrowser 
-              repoName={selectedRepo.full_name}
-              onScopeSelect={handleScopeSelect}
-              onScopeChange={handleScopeChange}
-            />
+            <div ref={contextRef}>
+              <RepoBrowser 
+                repoName={selectedRepo.full_name}
+                onScopeSelect={handleScopeSelect}
+                onScopeChange={handleScopeChange}
+              />
+            </div>
           )}
 
           {/* Step 4: Content - always visible once repo selected */}
           {selectedRepo && (
-            <ContentEditor
-              key={contentKey}
-              scope={browseScope}
-              repoName={selectedRepo.full_name}
-              onComplete={handleContentComplete}
-            />
+            <div ref={contentRef}>
+              <ContentEditor
+                key={contentKey}
+                scope={browseScope}
+                repoName={selectedRepo.full_name}
+                onComplete={handleContentComplete}
+              />
+            </div>
           )}
 
           {/* Placeholder when not ready */}
