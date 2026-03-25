@@ -61,7 +61,16 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       const base = contentBaseTextRef.current
       const before = base.slice(0, insertPos)
       const after = base.slice(insertPos)
-      setRawContent(before + newText + after)
+      const newContent = before + newText + after
+      setRawContent(newContent)
+      
+      // Restore cursor position after the inserted text
+      requestAnimationFrame(() => {
+        if (contentTextareaRef.current) {
+          const newCursorPos = insertPos + newText.length
+          contentTextareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        }
+      })
     },
   })
 
@@ -72,6 +81,14 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       const before = base.slice(0, insertPos)
       const after = base.slice(insertPos)
       setFeedback(before + newText + after)
+      
+      // Restore cursor position after the inserted text
+      requestAnimationFrame(() => {
+        if (feedbackInputRef.current) {
+          const newCursorPos = insertPos + newText.length
+          feedbackInputRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        }
+      })
     },
   })
 

@@ -79,13 +79,14 @@ export function MicButton({
         size={size}
         disabled={disabled || transcribing}
         onClick={handleClick}
-        onMouseDown={handleMouseDown}
+        onMouseDown={(e) => { e.preventDefault(); handleMouseDown() }}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onTouchStart={(e) => { e.preventDefault(); handleMouseDown(); handleClick() }}
         onTouchEnd={(e) => { e.preventDefault(); handleMouseUp() }}
         className={`${baseClasses} ${colorClasses} ${recording ? 'animate-pulse' : ''} ${className}`}
         title="Tap to start/stop or hold to record"
+        tabIndex={-1}
       >
         {transcribing ? (
           <Loader2 className="h-4 w-4 animate-spin" />
