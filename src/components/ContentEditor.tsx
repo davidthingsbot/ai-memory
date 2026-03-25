@@ -164,9 +164,16 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     if (isRecording) {
       setError(null)
-      // Use the last tracked selection
+      // Use the last tracked selection, or current cursor from DOM, or end of text
       const currentText = feedbackInputRef.current?.value ?? feedback
-      const { start, end } = lastFeedbackSelectionRef.current
+      let start = lastFeedbackSelectionRef.current.start
+      let end = lastFeedbackSelectionRef.current.end
+      
+      // If no tracked position, try to get from DOM or default to end
+      if (start === 0 && end === 0 && currentText.length > 0) {
+        start = feedbackInputRef.current?.selectionStart ?? currentText.length
+        end = feedbackInputRef.current?.selectionEnd ?? currentText.length
+      }
       
       // If there's a selection, remove the selected text from base
       if (start !== end) {
@@ -468,6 +475,8 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   onSelect={handleFeedbackCursorChange}
                   onClick={handleFeedbackCursorChange}
                   onKeyUp={handleFeedbackCursorChange}
+                  onFocus={handleFeedbackCursorChange}
+                  onBlur={handleFeedbackCursorChange}
                   onKeyDown={(e) => e.key === 'Enter' && feedback.trim() && handleRevise()}
                   disabled={feedbackTranscription.isRecording || feedbackTranscription.isConnecting}
                 />
