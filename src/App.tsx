@@ -1,13 +1,19 @@
 import { useState, useCallback } from 'react'
 import { Credentials } from '@/components/Credentials'
+import { RepoSelection, type Repository } from '@/components/RepoSelection'
 
 function App() {
   const [hasOpenAI, setHasOpenAI] = useState(false)
   const [hasGitHub, setHasGitHub] = useState(false)
+  const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
 
   const handleCredentialsChange = useCallback((openai: boolean, github: boolean) => {
     setHasOpenAI(openai)
     setHasGitHub(github)
+  }, [])
+
+  const handleRepoChange = useCallback((repo: Repository | null) => {
+    setSelectedRepo(repo)
   }, [])
 
   const credentialsReady = hasOpenAI && hasGitHub
@@ -26,12 +32,17 @@ function App() {
           {/* Step 1: Credentials */}
           <Credentials onCredentialsChange={handleCredentialsChange} />
 
-          {/* Step 2: Repository Selection (shown when credentials ready) */}
+          {/* Step 2: Repository Selection */}
           {credentialsReady && (
+            <RepoSelection onRepoChange={handleRepoChange} />
+          )}
+
+          {/* Step 3: Scope Selection (coming next) */}
+          {selectedRepo && (
             <div className="rounded-lg border bg-card p-6">
-              <h2 className="text-lg font-semibold mb-2">Repository</h2>
+              <h2 className="text-lg font-semibold mb-2">Scope (Optional)</h2>
               <p className="text-muted-foreground text-sm">
-                Select which repository to store your memories in.
+                Narrow down to a specific folder in <code className="text-xs">{selectedRepo.full_name}</code>.
               </p>
               <p className="text-muted-foreground text-sm mt-4 italic">
                 (Coming soon)
@@ -39,7 +50,7 @@ function App() {
             </div>
           )}
 
-          {/* Placeholder for remaining steps */}
+          {/* Placeholder when not ready */}
           {!credentialsReady && (
             <div className="rounded-lg border bg-muted/50 p-6 text-center">
               <p className="text-muted-foreground text-sm">
