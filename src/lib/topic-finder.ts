@@ -1,4 +1,5 @@
 import { getOpenAIKey } from '@/components/Credentials'
+import { getSelectedModel } from '@/components/ModelSelector'
 import { getSelectedRepo } from '@/components/RepoSelection'
 import { TOOL_DEFINITIONS, executeTool, getRepoTree } from './github-tools'
 
@@ -190,7 +191,7 @@ export async function findTopicLocation(
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: getSelectedModel(),
         messages,
         tools: TOOL_DEFINITIONS,
         tool_choice: 'auto',

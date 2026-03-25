@@ -1,4 +1,5 @@
 import { getOpenAIKey } from '@/components/Credentials'
+import { getSelectedModel } from '@/components/ModelSelector'
 import { getSelectedRepo } from '@/components/RepoSelection'
 import { readFile } from './github-tools'
 import type { TopicResult } from './topic-finder'
@@ -142,7 +143,7 @@ Please create a well-structured markdown document from these notes.`
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: getSelectedModel(),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -208,7 +209,7 @@ export async function reviseContent(
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: getSelectedModel(),
       messages: [
         {
           role: 'system',

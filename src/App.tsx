@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { Credentials } from '@/components/Credentials'
+import { ModelSelector } from '@/components/ModelSelector'
 import { RepoSelection, type Repository } from '@/components/RepoSelection'
 import { TopicFinder, type TopicResult } from '@/components/TopicFinder'
 import { ContentEditor } from '@/components/ContentEditor'
@@ -52,6 +53,9 @@ function App() {
         <main className="space-y-6">
           {/* Step 1: Credentials */}
           <Credentials onCredentialsChange={handleCredentialsChange} />
+
+          {/* Model Selection */}
+          {hasOpenAI && <ModelSelector />}
 
           {/* Step 2: Repository Selection */}
           {credentialsReady && (
