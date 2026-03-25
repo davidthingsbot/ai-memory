@@ -1,11 +1,13 @@
 import { useState, useCallback } from 'react'
 import { Credentials } from '@/components/Credentials'
 import { RepoSelection, type Repository } from '@/components/RepoSelection'
+import { TopicFinder, type TopicResult } from '@/components/TopicFinder'
 
 function App() {
   const [hasOpenAI, setHasOpenAI] = useState(false)
   const [hasGitHub, setHasGitHub] = useState(false)
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null)
+  const [topicResult, setTopicResult] = useState<TopicResult | null>(null)
 
   const handleCredentialsChange = useCallback((openai: boolean, github: boolean) => {
     setHasOpenAI(openai)
@@ -14,6 +16,12 @@ function App() {
 
   const handleRepoChange = useCallback((repo: Repository | null) => {
     setSelectedRepo(repo)
+    // Reset topic when repo changes
+    setTopicResult(null)
+  }, [])
+
+  const handleLocationFound = useCallback((result: TopicResult) => {
+    setTopicResult(result)
   }, [])
 
   const credentialsReady = hasOpenAI && hasGitHub
@@ -37,12 +45,20 @@ function App() {
             <RepoSelection onRepoChange={handleRepoChange} />
           )}
 
-          {/* Step 3: Scope Selection (coming next) */}
+          {/* Step 3: Topic / Location Finding */}
           {selectedRepo && (
+            <TopicFinder 
+              repoName={selectedRepo.full_name} 
+              onLocationFound={handleLocationFound}
+            />
+          )}
+
+          {/* Step 4: Content Entry (placeholder) */}
+          {topicResult && (
             <div className="rounded-lg border bg-card p-6">
-              <h2 className="text-lg font-semibold mb-2">Scope (Optional)</h2>
+              <h2 className="text-lg font-semibold mb-2">Content</h2>
               <p className="text-muted-foreground text-sm">
-                Narrow down to a specific folder in <code className="text-xs">{selectedRepo.full_name}</code>.
+                Now tell us what you know about this topic. Speak or type your notes.
               </p>
               <p className="text-muted-foreground text-sm mt-4 italic">
                 (Coming soon)
