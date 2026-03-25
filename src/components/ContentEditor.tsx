@@ -9,7 +9,8 @@ import { clearContext, prefetchRepoStructure } from '@/lib/topic-finder'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { 
   Sparkles, RotateCcw, Check, 
-  ExternalLink, MessageSquare, FileEdit
+  ExternalLink, MessageSquare, FileEdit,
+  Undo2, Redo2
 } from 'lucide-react'
 import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
@@ -42,6 +43,34 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   // Commit result
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
   const [filesChanged, setFilesChanged] = useState(0)
+
+  // Undo/redo stacks for content
+  const [undoStack, setUndoStack] = useState<string[]>([])
+  const [redoStack, setRedoStack] = useState<string[]>([])
+  
+  // Push current content to undo stack (call before making changes)
+  const pushUndo = useCallback(() => {
+    setUndoStack(prev => [...prev, rawContent])
+    setRedoStack([]) // Clear redo when new change happens
+  }, [rawContent])
+  
+  // Undo - restore previous content
+  const handleUndo = useCallback(() => {
+    if (undoStack.length === 0) return
+    const previous = undoStack[undoStack.length - 1]
+    setUndoStack(prev => prev.slice(0, -1))
+    setRedoStack(prev => [...prev, rawContent])
+    setRawContent(previous)
+  }, [undoStack, rawContent])
+  
+  // Redo - restore undone content
+  const handleRedo = useCallback(() => {
+    if (redoStack.length === 0) return
+    const next = redoStack[redoStack.length - 1]
+    setRedoStack(prev => prev.slice(0, -1))
+    setUndoStack(prev => [...prev, rawContent])
+    setRawContent(next)
+  }, [redoStack, rawContent])
 
   // Refs for textarea cursor position
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -228,6 +257,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   const handleTidy = useCallback(async () => {
     if (!rawContent.trim()) return
     
+    pushUndo() // Save current state for undo
     setError(null)
     setSteps([])
     setWorkStartTime(Date.now())
@@ -241,12 +271,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       setError(err instanceof Error ? err.message : 'Tidy failed')
       setIsWorking(false)
     }
-  }, [rawContent, addStep])
+  }, [rawContent, addStep, pushUndo])
 
   // Improve text - reorganize, clarify, extend with research
   const handleImprove = useCallback(async () => {
     if (!rawContent.trim()) return
     
+    pushUndo() // Save current state for undo
     setError(null)
     setSteps([])
     setWorkStartTime(Date.now())
@@ -260,7 +291,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       setError(err instanceof Error ? err.message : 'Improve failed')
       setIsWorking(false)
     }
-  }, [rawContent, addStep])
+  }, [rawContent, addStep, pushUndo])
 
   // Revise changeset based on feedback
   const handleRevise = useCallback(async () => {
@@ -425,13 +456,35 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
               </div>
             </div>
 
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
               <MicButton
                 recording={contentTranscription.isRecording}
                 transcribing={contentTranscription.isConnecting}
                 onRecordingChange={handleContentRecordingChange}
                 size="sm"
               />
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleUndo}
+                disabled={undoStack.length === 0 || isWorking}
+                title="Undo"
+              >
+                <Undo2 className="h-4 w-4" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRedo}
+                disabled={redoStack.length === 0 || isWorking}
+                title="Redo"
+              >
+                <Redo2 className="h-4 w-4" />
+              </Button>
+
+              <div className="w-px h-6 bg-border" />
 
               <Button
                 variant="outline"
