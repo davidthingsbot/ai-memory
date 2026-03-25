@@ -24,8 +24,7 @@ type Stage = 'input' | 'finding' | 'generating' | 'preview' | 'committing' | 'do
 
 export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProps) {
   // Input stage
-  const [description, setDescription] = useState('')
-  const [rawNotes, setRawNotes] = useState('')
+  const [rawContent, setRawContent] = useState('')
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
 
@@ -76,12 +75,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         const blob = await stopRecording()
         const text = await transcribeAudio(blob)
         if (text.trim()) {
-          // Append to notes (or description if notes empty and description empty)
-          if (!description && !rawNotes) {
-            setDescription(text)
-          } else {
-            setRawNotes(prev => prev + (prev ? ' ' : '') + text)
-          }
+          setRawContent(prev => prev + (prev ? ' ' : '') + text)
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Transcription failed')
@@ -89,7 +83,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         setTranscribing(false)
       }
     }
-  }, [stage, description, rawNotes])
+  }, [stage])
 
   // Feedback voice recording handler
   const handleFeedbackRecordingChange = useCallback(async (isRecording: boolean) => {
@@ -128,7 +122,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
 
   // Main action: find location (if needed) then generate
   const handleGenerate = useCallback(async () => {
-    if (!description.trim()) return
+    if (!rawContent.trim()) return
     
     setError(null)
     setSteps([])
@@ -141,7 +135,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       
       try {
         addStep('Finding best location for this content...')
-        const location = await findTopicLocation(description, addStep, scope)
+        const location = await findTopicLocation(rawContent, addStep, scope)
         addStep('Location found: ' + location.path)
         effectiveTopicResult = location
         setTopicResult(location)
@@ -167,14 +161,9 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setStage('generating')
     
     try {
-      // Combine description and notes for content generation
-      const combinedContent = rawNotes 
-        ? description + '\n\n' + rawNotes
-        : description
-
       const result = await generateContent({
         topicResult: effectiveTopicResult,
-        rawContent: combinedContent,
+        rawContent,
       }, addStep)
       
       addStep('Content generated')
@@ -185,7 +174,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       setError(err instanceof Error ? err.message : 'Generation failed')
       setStage('input')
     }
-  }, [description, rawNotes, needsLocationFinding, scope, resolvedPath, addStep])
+  }, [rawContent, needsLocationFinding, scope, resolvedPath, addStep])
 
   // Revise content
   const handleRevise = useCallback(async () => {
@@ -244,8 +233,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
 
   // Reset to start new entry
   const handleReset = useCallback(() => {
-    setDescription('')
-    setRawNotes('')
+    setRawContent('')
     setTopicResult(null)
     setGenerated(null)
     setEditedMarkdown('')
@@ -305,33 +293,12 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
         {/* Stage: Input */}
         {stage === 'input' && (
           <>
-            {/* Description field */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">What do you want to document?</label>
-              <Input
-                placeholder={needsLocationFinding 
-                  ? "e.g., How to prune apple trees in winter"
-                  : "e.g., Add section about winter pruning techniques"
-                }
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                disabled={recording || transcribing}
-              />
-              {needsLocationFinding && (
-                <p className="text-xs text-muted-foreground">
-                  AI will find the best location in {scope ? `"${scope.path}"` : 'your repository'} for this content.
-                </p>
-              )}
-            </div>
-
-            {/* Notes field */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Your notes (optional)</label>
               <textarea
-                className="w-full min-h-[120px] p-3 rounded-md border bg-background resize-y text-sm"
-                placeholder="Ramble your thoughts... Don't worry about structure, just get the information down. You can also leave this empty and just use the description above."
-                value={rawNotes}
-                onChange={(e) => setRawNotes(e.target.value)}
+                className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm"
+                placeholder="Ramble your thoughts... Don't worry about structure, just get the information down."
+                value={rawContent}
+                onChange={(e) => setRawContent(e.target.value)}
                 disabled={recording || transcribing}
               />
             </div>
@@ -346,7 +313,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
 
               <Button
                 onClick={handleGenerate}
-                disabled={!description.trim() || recording || transcribing}
+                disabled={!rawContent.trim() || recording || transcribing}
               >
                 {needsLocationFinding ? (
                   <>
@@ -365,7 +332,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
             {error && <p className="text-sm text-destructive">{error}</p>}
 
             <p className="text-xs text-muted-foreground">
-              Speak or type. First recording goes to description, subsequent ones append to notes.
+              Speak or type your notes. AI will turn them into polished documentation.
             </p>
           </>
         )}
