@@ -289,7 +289,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                   className="w-full min-h-[150px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
                   placeholder="Ramble your thoughts... Don't worry about structure, just get the information down."
                   value={contentTranscription.isRecording 
-                    ? rawContent + (cursorVisible ? ' ●▌' : '') 
+                    ? rawContent + (cursorVisible ? ' ●▌' : ' ●') 
                     : rawContent}
                   onChange={(e) => {
                     // Strip cursor indicator if present
@@ -297,6 +297,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
                     setRawContent(value)
                   }}
                   disabled={contentTranscription.isConnecting}
+                  style={contentTranscription.isRecording ? { caretColor: 'transparent' } : undefined}
                 />
               </div>
             </div>
