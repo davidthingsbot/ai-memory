@@ -49,13 +49,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
   // Track the base text and insert position for content
   const contentBaseTextRef = useRef<string>('')
   const contentInsertPosRef = useRef<number>(0)
-  // Track cursor position continuously (updated on every selection change)
-  const lastContentCursorPosRef = useRef<number>(0)
+  // Track selection range continuously (updated on every selection change)
+  const lastContentSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 })
   
   // Track the base text and insert position for feedback
   const feedbackBaseTextRef = useRef<string>('')
   const feedbackInsertPosRef = useRef<number>(0)
-  const lastFeedbackCursorPosRef = useRef<number>(0)
+  const lastFeedbackSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 })
 
   // Real-time transcription for content input
   const contentTranscription = useRealtimeTranscription({
@@ -109,10 +109,13 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     return () => clearInterval(interval)
   }, [contentTranscription.isRecording])
 
-  // Track cursor position in content textarea
+  // Track selection range in content textarea
   const handleContentCursorChange = useCallback(() => {
     if (contentTextareaRef.current) {
-      lastContentCursorPosRef.current = contentTextareaRef.current.selectionStart
+      lastContentSelectionRef.current = {
+        start: contentTextareaRef.current.selectionStart,
+        end: contentTextareaRef.current.selectionEnd,
+      }
     }
   }, [])
 
@@ -122,21 +125,36 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     if (isRecording) {
       setError(null)
-      // Use the last tracked cursor position (captured before button click stole focus)
+      // Use the last tracked selection (captured before button click stole focus)
       const currentText = contentTextareaRef.current?.value ?? rawContent
-      const cursorPos = lastContentCursorPosRef.current
-      contentBaseTextRef.current = currentText
-      contentInsertPosRef.current = cursorPos
-      contentTranscription.startRecording(cursorPos)
+      const { start, end } = lastContentSelectionRef.current
+      
+      // If there's a selection, remove the selected text from base
+      // and set insert position to the start of the selection
+      if (start !== end) {
+        // Remove selected text - transcription will replace it
+        const textWithoutSelection = currentText.slice(0, start) + currentText.slice(end)
+        contentBaseTextRef.current = textWithoutSelection
+        contentInsertPosRef.current = start
+        // Update display immediately so user sees selection removed
+        setRawContent(textWithoutSelection)
+      } else {
+        contentBaseTextRef.current = currentText
+        contentInsertPosRef.current = start
+      }
+      contentTranscription.startRecording(start)
     } else {
       contentTranscription.stopRecording()
     }
   }, [stage, contentTranscription, rawContent])
 
-  // Track cursor position in feedback input
+  // Track selection range in feedback input
   const handleFeedbackCursorChange = useCallback(() => {
     if (feedbackInputRef.current) {
-      lastFeedbackCursorPosRef.current = feedbackInputRef.current.selectionStart ?? 0
+      lastFeedbackSelectionRef.current = {
+        start: feedbackInputRef.current.selectionStart ?? 0,
+        end: feedbackInputRef.current.selectionEnd ?? 0,
+      }
     }
   }, [])
 
@@ -146,12 +164,21 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     
     if (isRecording) {
       setError(null)
-      // Use the last tracked cursor position
+      // Use the last tracked selection
       const currentText = feedbackInputRef.current?.value ?? feedback
-      const cursorPos = lastFeedbackCursorPosRef.current
-      feedbackBaseTextRef.current = currentText
-      feedbackInsertPosRef.current = cursorPos
-      feedbackTranscription.startRecording(cursorPos)
+      const { start, end } = lastFeedbackSelectionRef.current
+      
+      // If there's a selection, remove the selected text from base
+      if (start !== end) {
+        const textWithoutSelection = currentText.slice(0, start) + currentText.slice(end)
+        feedbackBaseTextRef.current = textWithoutSelection
+        feedbackInsertPosRef.current = start
+        setFeedback(textWithoutSelection)
+      } else {
+        feedbackBaseTextRef.current = currentText
+        feedbackInsertPosRef.current = start
+      }
+      feedbackTranscription.startRecording(start)
     } else {
       feedbackTranscription.stopRecording()
     }
