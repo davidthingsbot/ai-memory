@@ -2,15 +2,16 @@ import { useState, useCallback, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { listDirectory, readFile, type DirectoryEntry } from '@/lib/github-tools'
+import { MarkdownPreview } from './MarkdownPreview'
 import { 
   FolderOpen, FileText, ChevronRight, ChevronDown, 
-  Loader2, Check, X
+  Loader2, Check, X, Eye, Code
 } from 'lucide-react'
 
 interface RepoBrowserProps {
-  repoName?: string // For future use
+  repoName?: string
   onScopeSelect?: (scope: BrowseScope | null) => void
-  onScopeChange?: () => void // Called when scope changes, to clear downstream state
+  onScopeChange?: () => void
 }
 
 export interface BrowseScope {
@@ -34,8 +35,8 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
   const [fileContent, setFileContent] = useState<string | null>(null)
   const [fileLoading, setFileLoading] = useState(false)
   const [scope, setScope] = useState<BrowseScope | null>(null)
+  const [showRaw, setShowRaw] = useState(false)
 
-  // Load root directory
   useEffect(() => {
     loadDirectory('')
   }, [])
@@ -45,7 +46,6 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
       setLoading(path === '')
       const entries = await listDirectory(path)
       
-      // Sort: directories first, then files
       entries.sort((a, b) => {
         if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
         return a.name.localeCompare(b.name)
@@ -54,7 +54,6 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
       if (path === '') {
         setTree(entries)
       } else {
-        // Update tree with children
         setTree(prev => updateTreeNode(prev, path, entries))
       }
     } catch (err) {
@@ -80,17 +79,14 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
     setSelectedPath(node.path)
     setFileContent(null)
     
-    // Auto-set scope to this directory
     const newScope: BrowseScope = { type: 'directory', path: node.path || '/' }
     setScope(newScope)
     onScopeSelect?.(newScope)
-    onScopeChange?.() // Clear downstream state
+    onScopeChange?.()
     
     if (node.expanded) {
-      // Collapse
       setTree(prev => collapseNode(prev, node.path))
     } else {
-      // Expand - load children if needed
       setTree(prev => setNodeLoading(prev, node.path, true))
       await loadDirectory(node.path)
     }
@@ -108,16 +104,43 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
     })
   }
 
-  const setNodeLoading = (nodes: TreeNode[], path: string, loading: boolean): TreeNode[] => {
+  const setNodeLoading = (nodes: TreeNode[], path: string, loadingState: boolean): TreeNode[] => {
     return nodes.map(node => {
       if (node.path === path) {
-        return { ...node, loading }
+        return { ...node, loading: loadingState }
       }
       if (node.children) {
-        return { ...node, children: setNodeLoading(node.children, path, loading) }
+        return { ...node, children: setNodeLoading(node.children, path, loadingState) }
       }
       return node
     })
+  }
+
+  // Expand tree to a specific path
+  const expandToPath = async (targetPath: string) => {
+    const segments = targetPath.split('/').filter(Boolean)
+    let currentPath = ''
+    
+    for (let i = 0; i < segments.length - 1; i++) {
+      currentPath = currentPath ? `${currentPath}/${segments[i]}` : segments[i]
+      
+      // Check if this directory is already expanded
+      const findNode = (nodes: TreeNode[], path: string): TreeNode | null => {
+        for (const node of nodes) {
+          if (node.path === path) return node
+          if (node.children) {
+            const found = findNode(node.children, path)
+            if (found) return found
+          }
+        }
+        return null
+      }
+      
+      const node = findNode(tree, currentPath)
+      if (node && !node.expanded) {
+        await loadDirectory(currentPath)
+      }
+    }
   }
 
   const selectFile = async (path: string) => {
@@ -129,7 +152,6 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
       const file = await readFile(path)
       if (file) {
         setFileContent(file.content)
-        // Auto-set scope to this file
         const newScope: BrowseScope = { 
           type: 'file', 
           path, 
@@ -137,7 +159,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
         }
         setScope(newScope)
         onScopeSelect?.(newScope)
-        onScopeChange?.() // Clear downstream state
+        onScopeChange?.()
       }
     } catch (err) {
       setError('Failed to load file')
@@ -145,6 +167,27 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
       setFileLoading(false)
     }
   }
+
+  // Handle navigation from markdown links
+  const handleNavigate = useCallback(async (path: string) => {
+    // Expand tree to show the path
+    await expandToPath(path)
+    
+    // Check if it's a file or directory by looking at tree or just try to load
+    if (path.includes('.')) {
+      // Likely a file
+      await selectFile(path)
+    } else {
+      // Could be directory, try to load it
+      setSelectedPath(path)
+      setFileContent(null)
+      const newScope: BrowseScope = { type: 'directory', path }
+      setScope(newScope)
+      onScopeSelect?.(newScope)
+      onScopeChange?.()
+      await loadDirectory(path)
+    }
+  }, [tree, onScopeSelect, onScopeChange])
 
   const handleSetScope = useCallback((type: BrowseScope['type'], path: string) => {
     const newScope: BrowseScope = { type, path }
@@ -166,7 +209,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
       }
       setScope(newScope)
       onScopeSelect?.(newScope)
-      onScopeChange?.() // Clear downstream state
+      onScopeChange?.()
     }
   }, [selectedPath, fileContent, onScopeSelect, onScopeChange])
 
@@ -174,6 +217,12 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
     setScope(null)
     onScopeSelect?.(null)
   }, [onScopeSelect])
+
+  // Check if file is markdown
+  const isMarkdown = selectedPath?.endsWith('.md') || selectedPath?.endsWith('.mdx')
+  
+  // Get base path for resolving relative links
+  const basePath = selectedPath ? selectedPath.split('/').slice(0, -1).join('/') : ''
 
   const renderTree = (nodes: TreeNode[], depth = 0) => {
     return nodes.map(node => (
@@ -220,12 +269,12 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
           {scope && (
             <Button variant="ghost" size="sm" onClick={clearScope}>
               <X className="h-4 w-4 mr-1" />
-              Clear scope
+              Clear
             </Button>
           )}
         </CardTitle>
         <CardDescription>
-          Select a folder, file, or passage to focus your topic search.
+          Browse and select context for your content.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -235,90 +284,111 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
             <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
               <Check className="h-4 w-4" />
               <span className="font-medium">
-                Scope: {scope.type === 'directory' ? 'Directory' : scope.type === 'file' ? 'File' : 'Selection'}
+                {scope.type === 'directory' ? 'Directory' : scope.type === 'file' ? 'File' : 'Selection'}:
               </span>
+              <code className="text-xs">{scope.path}</code>
             </div>
-            <code className="text-xs text-green-600 dark:text-green-400">{scope.path}</code>
             {scope.selectedText && (
               <p className="text-xs mt-1 text-green-600 dark:text-green-400 italic truncate">
-                "{scope.selectedText.slice(0, 100)}..."
+                "{scope.selectedText.slice(0, 100)}{scope.selectedText.length > 100 ? '...' : ''}"
               </p>
             )}
           </div>
         )}
 
-        <div className="flex gap-3 h-64">
-          {/* Tree view */}
-          <div className="w-1/3 border rounded-lg overflow-y-auto p-1">
-            {loading ? (
-              <div className="flex items-center justify-center h-full">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : error ? (
-              <p className="text-sm text-destructive p-2">{error}</p>
-            ) : (
-              renderTree(tree)
-            )}
-          </div>
-
-          {/* File preview */}
-          <div className="w-2/3 border rounded-lg overflow-hidden flex flex-col">
-            {selectedPath ? (
-              <>
-                <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/50">
-                  <code className="text-xs truncate">{selectedPath}</code>
-                  <div className="flex gap-1">
-                    {selectedPath.includes('/') && (
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleSetScope('directory', selectedPath.split('/').slice(0, -1).join('/') || '/')}
-                      >
-                        Use folder
-                      </Button>
-                    )}
-                    {fileContent && (
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleSetScope('file', selectedPath)}
-                      >
-                        Use file
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <div 
-                  className="flex-1 overflow-y-auto p-3 text-sm"
-                  onMouseUp={handleTextSelection}
-                >
-                  {fileLoading ? (
-                    <div className="flex items-center justify-center h-full">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : fileContent ? (
-                    <pre className="whitespace-pre-wrap font-mono text-xs">{fileContent}</pre>
-                  ) : (
-                    <p className="text-muted-foreground italic">
-                      {selectedPath.endsWith('/') || !selectedPath.includes('.') 
-                        ? 'Directory selected' 
-                        : 'Select a file to preview'}
-                    </p>
-                  )}
-                </div>
-                {fileContent && (
-                  <div className="px-3 py-2 border-t bg-muted/30 text-xs text-muted-foreground">
-                    Select text to use a specific passage as scope
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                Select a file or folder to preview
-              </div>
-            )}
-          </div>
+        {/* Tree view - compact */}
+        <div className="border rounded-lg overflow-y-auto p-1 max-h-48">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : error ? (
+            <p className="text-sm text-destructive p-2">{error}</p>
+          ) : (
+            renderTree(tree)
+          )}
         </div>
+
+        {/* File preview - full width below */}
+        {selectedPath && (
+          <div className="border rounded-lg overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/50">
+              <code className="text-xs truncate flex-1">{selectedPath}</code>
+              <div className="flex gap-1 ml-2">
+                {isMarkdown && fileContent && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setShowRaw(!showRaw)}
+                    title={showRaw ? 'Show rendered' : 'Show raw'}
+                  >
+                    {showRaw ? <Eye className="h-4 w-4" /> : <Code className="h-4 w-4" />}
+                  </Button>
+                )}
+                {selectedPath.includes('/') && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleSetScope('directory', selectedPath.split('/').slice(0, -1).join('/') || '/')}
+                  >
+                    Use folder
+                  </Button>
+                )}
+                {fileContent && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleSetScope('file', selectedPath)}
+                  >
+                    Use file
+                  </Button>
+                )}
+              </div>
+            </div>
+            
+            {/* Content */}
+            <div 
+              className="overflow-y-auto p-4 max-h-96"
+              onMouseUp={handleTextSelection}
+            >
+              {fileLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : fileContent ? (
+                isMarkdown && !showRaw ? (
+                  <MarkdownPreview 
+                    content={fileContent} 
+                    basePath={basePath}
+                    onNavigate={handleNavigate}
+                  />
+                ) : (
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-muted-foreground">{fileContent}</pre>
+                )
+              ) : (
+                <p className="text-muted-foreground italic text-center py-8">
+                  {selectedPath.endsWith('/') || !selectedPath.includes('.') 
+                    ? 'Directory selected' 
+                    : 'Select a file to preview'}
+                </p>
+              )}
+            </div>
+            
+            {/* Footer hint */}
+            {fileContent && (
+              <div className="px-3 py-2 border-t bg-muted/30 text-xs text-muted-foreground">
+                Select text to use a specific passage as context
+              </div>
+            )}
+          </div>
+        )}
+
+        {!selectedPath && (
+          <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+            Select a file or folder above to preview
+          </div>
+        )}
       </CardContent>
     </Card>
   )

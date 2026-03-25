@@ -9,6 +9,7 @@ export interface GenerateRequest {
   rawContent: string
   existingContent?: string
   feedback?: string
+  selectionContext?: string // Selected passage that provides context for where to add content
 }
 
 export interface GeneratedContent {
@@ -109,7 +110,15 @@ You are UPDATING an existing document. Your task:
 \`\`\`markdown
 ${existingContent}
 \`\`\`
+${request.selectionContext ? `
+## User's Selected Passage
 
+The user selected this specific passage as context for where they want to add content:
+
+> ${request.selectionContext}
+
+This indicates where in the document they want the new content to go — near or related to this selection.
+` : ''}
 ## Task
 
 ${hasNotes 
@@ -118,7 +127,7 @@ ${hasNotes
 
 ${request.feedback ? `## Additional Instructions\n\n${request.feedback}` : ''}
 
-First, analyze the document structure and decide where this content should go. Then integrate it and return the complete updated document.`
+First, analyze the document structure and decide where this content should go.${request.selectionContext ? ' Pay special attention to the selected passage — the user indicated this is where the content relates.' : ''} Then integrate it and return the complete updated document.`
 
   } else {
     systemPrompt += `

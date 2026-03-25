@@ -8,10 +8,11 @@ import { commitFile } from '@/lib/github-commit'
 import { startRecording, stopRecording, transcribeAudio } from '@/lib/audio-transcribe'
 import { 
   FileText, Sparkles, RotateCcw, Check, 
-  ExternalLink, MessageSquare, FilePlus, FileEdit, Search
+  ExternalLink, MessageSquare, FilePlus, FileEdit, Search, Eye, Code
 } from 'lucide-react'
 import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
+import { MarkdownPreview } from './MarkdownPreview'
 import type { BrowseScope } from './RepoBrowser'
 
 interface ContentEditorProps {
@@ -45,6 +46,9 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
 
   // Commit result
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
+
+  // Preview mode toggle
+  const [showRaw, setShowRaw] = useState(false)
 
   // Determine if we need to find location or can proceed directly
   const needsLocationFinding = !scope || scope.type === 'directory'
@@ -164,6 +168,7 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
       const result = await generateContent({
         topicResult: effectiveTopicResult,
         rawContent,
+        selectionContext: scope?.type === 'selection' ? scope.selectedText : undefined,
       }, addStep)
       
       addStep('Content generated')
@@ -374,16 +379,38 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
               </div>
             )}
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Preview (editable)
-              </label>
-              <textarea
-                className="w-full min-h-[250px] p-3 rounded-md border bg-background resize-y text-sm font-mono"
-                value={editedMarkdown}
-                onChange={(e) => setEditedMarkdown(e.target.value)}
-              />
+            {/* Preview/Edit toggle */}
+            <div className="border rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/50">
+                <span className="text-sm font-medium flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  {showRaw ? 'Edit' : 'Preview'}
+                </span>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setShowRaw(!showRaw)}
+                  title={showRaw ? 'Show rendered preview' : 'Edit raw markdown'}
+                >
+                  {showRaw ? <Eye className="h-4 w-4" /> : <Code className="h-4 w-4" />}
+                  <span className="ml-1 text-xs">{showRaw ? 'Preview' : 'Edit'}</span>
+                </Button>
+              </div>
+              
+              {showRaw ? (
+                <textarea
+                  className="w-full min-h-[300px] p-4 bg-background resize-y text-sm font-mono border-0 focus:ring-0 focus:outline-none"
+                  value={editedMarkdown}
+                  onChange={(e) => setEditedMarkdown(e.target.value)}
+                />
+              ) : (
+                <div className="p-4 max-h-[400px] overflow-y-auto bg-background">
+                  <MarkdownPreview 
+                    content={editedMarkdown}
+                    basePath={topicResult.path.split('/').slice(0, -1).join('/')}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
