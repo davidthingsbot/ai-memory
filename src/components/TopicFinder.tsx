@@ -22,6 +22,7 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const recordingRef = useRef(false)
+  const recordStartTime = useRef<number>(0)
 
   const handleSearch = useCallback(async (searchTopic?: string) => {
     const topicToSearch = searchTopic || topic
@@ -67,6 +68,7 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
       await startRecording()
       setRecording(true)
       recordingRef.current = true
+      recordStartTime.current = Date.now()
     } catch (err) {
       console.error('Failed to start recording:', err)
       setError('Could not access microphone. Please allow microphone access.')
@@ -76,8 +78,19 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
   const handleMicUp = useCallback(async () => {
     if (!recordingRef.current) return
     
+    const duration = Date.now() - recordStartTime.current
+    const MIN_DURATION = 500 // Minimum 500ms recording
+    
     recordingRef.current = false
     setRecording(false)
+    
+    // If too short, cancel and show message
+    if (duration < MIN_DURATION) {
+      cancelRecording()
+      setError('Hold the button longer to record')
+      return
+    }
+    
     setTranscribing(true)
     setError(null)
 
@@ -89,6 +102,8 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
         setTopic(text)
         // Automatically search after transcription
         handleSearch(text)
+      } else {
+        setError('Could not understand audio. Please try again.')
       }
     } catch (err) {
       console.error('Transcription failed:', err)

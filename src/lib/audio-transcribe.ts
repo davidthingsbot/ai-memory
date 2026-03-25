@@ -42,8 +42,14 @@ export function stopRecording(): Promise<Blob> {
       return
     }
 
+    // Request any remaining data before stopping
+    if (mediaRecorder.state === 'recording') {
+      mediaRecorder.requestData()
+    }
+
     mediaRecorder.onstop = () => {
-      const audioBlob = new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
+      const mimeType = mediaRecorder?.mimeType || 'audio/webm'
+      const audioBlob = new Blob(audioChunks, { type: mimeType })
       
       // Clean up
       if (stream) {
@@ -51,8 +57,15 @@ export function stopRecording(): Promise<Blob> {
         stream = null
       }
       mediaRecorder = null
-      audioChunks = []
+      
+      // Check if we actually got any audio
+      if (audioBlob.size < 1000) {
+        audioChunks = []
+        reject(new Error('Recording too short. Hold the button longer.'))
+        return
+      }
 
+      audioChunks = []
       resolve(audioBlob)
     }
 

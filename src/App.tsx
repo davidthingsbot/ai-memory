@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Credentials } from '@/components/Credentials'
 import { RepoSelection, type Repository } from '@/components/RepoSelection'
 import { TopicFinder, type TopicResult } from '@/components/TopicFinder'
+import { ContentEditor } from '@/components/ContentEditor'
 
 function App() {
   const [hasOpenAI, setHasOpenAI] = useState(false)
@@ -22,6 +23,11 @@ function App() {
 
   const handleLocationFound = useCallback((result: TopicResult) => {
     setTopicResult(result)
+  }, [])
+
+  const handleContentComplete = useCallback(() => {
+    // Reset to topic selection for another entry
+    setTopicResult(null)
   }, [])
 
   const credentialsReady = hasOpenAI && hasGitHub
@@ -46,24 +52,20 @@ function App() {
           )}
 
           {/* Step 3: Topic / Location Finding */}
-          {selectedRepo && (
+          {selectedRepo && !topicResult && (
             <TopicFinder 
               repoName={selectedRepo.full_name} 
               onLocationFound={handleLocationFound}
             />
           )}
 
-          {/* Step 4: Content Entry (placeholder) */}
-          {topicResult && (
-            <div className="rounded-lg border bg-card p-6">
-              <h2 className="text-lg font-semibold mb-2">Content</h2>
-              <p className="text-muted-foreground text-sm">
-                Now tell us what you know about this topic. Speak or type your notes.
-              </p>
-              <p className="text-muted-foreground text-sm mt-4 italic">
-                (Coming soon)
-              </p>
-            </div>
+          {/* Step 4: Content Entry & Generation */}
+          {selectedRepo && topicResult && (
+            <ContentEditor
+              topicResult={topicResult}
+              repoName={selectedRepo.full_name}
+              onComplete={handleContentComplete}
+            />
           )}
 
           {/* Placeholder when not ready */}
