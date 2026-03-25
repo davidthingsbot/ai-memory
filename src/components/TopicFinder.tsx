@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { findTopicLocation, type TopicResult } from '@/lib/topic-finder'
 import { startRecording, stopRecording, cancelRecording, transcribeAudio } from '@/lib/audio-transcribe'
 import { MessageSquare, Search, FileText, FilePlus, Loader2, Check, RotateCcw, Mic } from 'lucide-react'
+import { WorkingBox } from './WorkingBox'
 
 interface TopicFinderProps {
   repoName: string
@@ -14,7 +15,7 @@ interface TopicFinderProps {
 export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
   const [topic, setTopic] = useState('')
   const [loading, setLoading] = useState(false)
-  const [progress, setProgress] = useState<string>('')
+  const [steps, setSteps] = useState<string[]>([])
   const [result, setResult] = useState<TopicResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   
@@ -25,17 +26,22 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
   const recordStartTime = useRef<number>(0)
   const isHoldMode = useRef(false) // true = hold-to-record, false = toggle
 
+  const addStep = useCallback((step: string) => {
+    setSteps(prev => [...prev, step])
+  }, [])
+
   const handleSearch = useCallback(async (searchTopic?: string) => {
     const topicToSearch = searchTopic || topic
     if (!topicToSearch.trim()) return
 
     setLoading(true)
-    setProgress('Starting...')
+    setSteps([])
     setResult(null)
     setError(null)
 
     try {
-      const location = await findTopicLocation(topicToSearch, setProgress)
+      const location = await findTopicLocation(topicToSearch, addStep)
+      addStep('✓ Analysis complete')
       setResult(location)
       onLocationFound?.(location)
     } catch (err) {
@@ -43,9 +49,8 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
       setError(err instanceof Error ? err.message : 'Search failed')
     } finally {
       setLoading(false)
-      setProgress('')
     }
-  }, [topic, onLocationFound])
+  }, [topic, onLocationFound, addStep])
 
   const handleReset = useCallback(() => {
     setResult(null)
@@ -269,13 +274,8 @@ export function TopicFinder({ repoName, onLocationFound }: TopicFinderProps) {
               </div>
             )}
 
-            {/* Progress indicator */}
-            {loading && progress && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {progress}
-              </div>
-            )}
+            {/* Working box with steps */}
+            <WorkingBox steps={steps} isWorking={loading} />
 
             {/* Error */}
             {error && (

@@ -10,6 +10,7 @@ import {
   FileText, Mic, Sparkles, Loader2, RotateCcw, Check, 
   ExternalLink, MessageSquare, FilePlus, FileEdit
 } from 'lucide-react'
+import { WorkingBox } from './WorkingBox'
 
 interface ContentEditorProps {
   topicResult: TopicResult
@@ -33,7 +34,7 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
   const [generated, setGenerated] = useState<GeneratedContent | null>(null)
   const [editedMarkdown, setEditedMarkdown] = useState('')
   const [feedback, setFeedback] = useState('')
-  const [progress, setProgress] = useState('')
+  const [steps, setSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
   // Feedback voice recording state
@@ -192,20 +193,25 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
     }
   }, [stopFeedbackRec])
 
+  const addStep = useCallback((step: string) => {
+    setSteps(prev => [...prev, step])
+  }, [])
+
   // Generate content
   const handleGenerate = useCallback(async () => {
     if (!rawContent.trim()) return
     
     setStage('generating')
     setError(null)
-    setProgress('Starting...')
+    setSteps([])
 
     try {
       const result = await generateContent({
         topicResult,
         rawContent,
-      }, setProgress)
+      }, addStep)
       
+      addStep('✓ Content generated')
       setGenerated(result)
       setEditedMarkdown(result.markdown)
       setStage('preview')
@@ -213,7 +219,7 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
       setError(err instanceof Error ? err.message : 'Generation failed')
       setStage('input')
     }
-  }, [rawContent, topicResult])
+  }, [rawContent, topicResult, addStep])
 
   // Revise content
   const handleRevise = useCallback(async () => {
@@ -221,16 +227,17 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
     
     setStage('generating')
     setError(null)
-    setProgress('Revising...')
+    setSteps([])
 
     try {
       const result = await reviseContent(
         editedMarkdown,
         feedback,
         topicResult,
-        setProgress
+        addStep
       )
       
+      addStep('✓ Revision complete')
       setGenerated(result)
       setEditedMarkdown(result.markdown)
       setFeedback('')
@@ -239,7 +246,7 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
       setError(err instanceof Error ? err.message : 'Revision failed')
       setStage('preview')
     }
-  }, [feedback, editedMarkdown, topicResult])
+  }, [feedback, editedMarkdown, topicResult, addStep])
 
   // Commit to GitHub
   const handleCommit = useCallback(async () => {
@@ -247,7 +254,7 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
     
     setStage('committing')
     setError(null)
-    setProgress('Committing to GitHub...')
+    setSteps(['Committing to GitHub...'])
 
     try {
       const result = await commitFile(
@@ -257,6 +264,7 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
       )
       
       if (result.success) {
+        addStep('✓ Committed successfully')
         setCommitUrl(result.url || null)
         setStage('done')
       } else {
@@ -266,7 +274,7 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
       setError(err instanceof Error ? err.message : 'Commit failed')
       setStage('preview')
     }
-  }, [editedMarkdown, generated, topicResult])
+  }, [editedMarkdown, generated, topicResult, addStep])
 
   // Reset to start new entry
   const handleReset = useCallback(() => {
@@ -365,9 +373,8 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
 
         {/* Stage: Generating */}
         {stage === 'generating' && (
-          <div className="flex flex-col items-center justify-center py-8 gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">{progress}</p>
+          <div className="space-y-4">
+            <WorkingBox steps={steps} isWorking={true} />
           </div>
         )}
 
@@ -444,9 +451,8 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
 
         {/* Stage: Committing */}
         {stage === 'committing' && (
-          <div className="flex flex-col items-center justify-center py-8 gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">{progress}</p>
+          <div className="space-y-4">
+            <WorkingBox steps={steps} isWorking={true} />
           </div>
         )}
 
