@@ -16,6 +16,15 @@ export interface FileContent {
   sha: string
 }
 
+export interface SearchResult {
+  path: string
+  name: string
+  matches: Array<{
+    fragment: string
+    lineNumber?: number
+  }>
+}
+
 function getOctokit(): Octokit {
   const token = getSelectedRepoToken()
   if (!token) throw new Error('No GitHub token')
@@ -353,5 +362,33 @@ export async function executeTool(
     }
   } catch (err) {
     return `Error executing ${name}: ${err instanceof Error ? err.message : 'Unknown error'}`
+  }
+}
+
+/**
+ * Search for code/content in the repository using GitHub's search API.
+ */
+export async function searchRepo(query: string): Promise<SearchResult[]> {
+  const octokit = getOctokit()
+  const { owner, repo } = getRepoInfo()
+
+  try {
+    const response = await octokit.rest.search.code({
+      q: `${query} repo:${owner}/${repo}`,
+      per_page: 20,
+    })
+
+    return response.data.items.map(item => ({
+      path: item.path,
+      name: item.name,
+      matches: item.text_matches?.map(match => ({
+        fragment: match.fragment || '',
+        lineNumber: undefined, // GitHub doesn't provide line numbers directly
+      })) || [],
+    }))
+  } catch (err) {
+    // GitHub code search might fail for various reasons
+    console.error('Search error:', err)
+    return []
   }
 }

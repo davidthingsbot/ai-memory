@@ -8,6 +8,7 @@ import { getOpenAIKey } from '@/components/Credentials'
 import { getSelectedModel } from '@/components/ModelSelector'
 import { getSelectedRepo } from '@/components/RepoSelection'
 import { readFile, listDirectory } from './github-tools'
+import { addStagedImage, mimeToExtension } from './image-store'
 import type { BrowseScope } from '@/components/RepoBrowser'
 
 // A single file change in the changeset
@@ -148,6 +149,7 @@ Guidelines:
 - Use plain ASCII quotes (" and ') only - never use curly/smart quotes (" " ' ')
 - If referencing images, place them in an images/ subdirectory relative to the document (e.g., images/diagram.png)
 - Use relative paths for images in markdown: ![description](images/filename.png)
+- You have a fetch_image tool to download images from URLs - use it when the user mentions an image URL or when an image would enhance the documentation
 
 You MUST respond with a JSON object in this exact format:
 {
@@ -185,28 +187,110 @@ Based on the above, determine what file operations are needed and return the cha
 
   onProgress?.(`Generating changeset with ${getSelectedModel()}...`)
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: getSelectedModel(),
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-    }),
-  })
+  // Determine image directory based on scope
+  const imageDir = request.scope?.type === 'file'
+    ? request.scope.path.split('/').slice(0, -1).concat('images').join('/') || 'images'
+    : request.scope?.type === 'directory'
+      ? `${request.scope.path}/images`.replace(/^\//, '')
+      : 'images'
 
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`API error: ${error}`)
+  // Tool for fetching images
+  const fetchImageTool = {
+    type: 'function' as const,
+    function: {
+      name: 'fetch_image',
+      description: 'Download an image from a URL and stage it for commit. Returns the relative markdown path to use.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'The URL of the image to download' },
+          filename: { type: 'string', description: 'Desired filename (without path). If omitted, derived from URL.' },
+          description: { type: 'string', description: 'Alt text description for the image' },
+        },
+        required: ['url'],
+      },
+    },
   }
 
-  const data = await response.json()
+  // Messages for the conversation (may have multiple turns if tools are called)
+  const messages: Array<{ role: string; content: string; tool_calls?: any[]; tool_call_id?: string }> = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ]
+
+  let finalResponse: any = null
+  const maxToolCalls = 10 // Prevent infinite loops
+
+  for (let i = 0; i < maxToolCalls; i++) {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: getSelectedModel(),
+        messages,
+        tools: [fetchImageTool],
+        tool_choice: 'auto',
+      }),
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`API error: ${error}`)
+    }
+
+    const data = await response.json()
+    const assistantMessage = data.choices[0]?.message
+
+    if (!assistantMessage) {
+      throw new Error('No response from AI')
+    }
+
+    // Check for tool calls
+    if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+      // Add assistant message with tool calls
+      messages.push(assistantMessage)
+
+      // Process each tool call
+      for (const toolCall of assistantMessage.tool_calls) {
+        if (toolCall.function.name === 'fetch_image') {
+          try {
+            const args = JSON.parse(toolCall.function.arguments)
+            onProgress?.(`📥 Fetching image: ${args.url.slice(0, 50)}...`)
+            
+            const result = await fetchAndStageImage(args.url, imageDir, args.filename)
+            
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(result),
+            })
+            
+            onProgress?.(`✓ Image staged: ${result.relativePath}`)
+          } catch (err) {
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({ error: err instanceof Error ? err.message : 'Failed to fetch image' }),
+            })
+            onProgress?.(`⚠️ Image fetch failed`)
+          }
+        }
+      }
+    } else {
+      // No tool calls, this is the final response
+      finalResponse = data
+      break
+    }
+  }
+
+  if (!finalResponse) {
+    throw new Error('Max tool calls exceeded')
+  }
+
+  const data = finalResponse
   const content = data.choices[0]?.message?.content
 
   if (!content) {
@@ -384,4 +468,61 @@ Please revise the changeset according to the feedback. Keep what's good, fix wha
   onProgress?.(`Revised ${result.changes.length} change(s)`)
 
   return result
+}
+
+/**
+ * Fetch an image from a URL and stage it for commit.
+ * Returns the relative path to use in markdown.
+ */
+async function fetchAndStageImage(
+  url: string,
+  imageDir: string,
+  suggestedFilename?: string
+): Promise<{ relativePath: string; fullPath: string }> {
+  // Fetch the image
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status}`)
+  }
+
+  const contentType = response.headers.get('content-type') || 'image/png'
+  const blob = await response.blob()
+  
+  // Convert to data URL
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error('Failed to read image'))
+    reader.readAsDataURL(blob)
+  })
+
+  // Determine filename
+  let filename = suggestedFilename
+  if (!filename) {
+    // Try to extract from URL
+    const urlPath = new URL(url).pathname
+    filename = urlPath.split('/').pop() || 'image'
+    
+    // Ensure it has an extension
+    if (!filename.includes('.')) {
+      filename += '.' + mimeToExtension(contentType)
+    }
+  }
+
+  // Clean filename
+  filename = filename.replace(/[^a-zA-Z0-9._-]/g, '-')
+
+  const fullPath = `${imageDir}/${filename}`.replace(/\/+/g, '/')
+  const relativePath = `images/${filename}`
+
+  // Stage the image
+  addStagedImage({
+    path: fullPath,
+    dataUrl,
+    mimeType: contentType,
+    size: blob.size,
+    name: filename,
+  })
+
+  return { relativePath, fullPath }
 }

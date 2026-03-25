@@ -1,11 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { listDirectory, readFile, type DirectoryEntry } from '@/lib/github-tools'
+import { Input } from '@/components/ui/input'
+import { listDirectory, readFile, searchRepo, type DirectoryEntry, type SearchResult } from '@/lib/github-tools'
 import { MarkdownPreview } from './MarkdownPreview'
+import { MicButton } from './MicButton'
+import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { 
   FolderOpen, FileText, ChevronRight, ChevronDown, 
-  Loader2, Check, X, Eye, Code
+  Loader2, Check, X, Eye, Code, Search
 } from 'lucide-react'
 
 interface RepoBrowserProps {
@@ -42,6 +45,12 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
   const [scope, setScope] = useState<BrowseScope | null>(null)
   const [showRaw, setShowRaw] = useState(false)
   
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  
   // Persistent selection/cursor in file preview
   const [fileSelection, setFileSelection] = useState<{
     start: number
@@ -56,6 +65,44 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
   useEffect(() => {
     loadDirectory('')
   }, [])
+
+  // Voice transcription for search
+  const searchTranscription = useRealtimeTranscription({
+    onTranscriptInsert: (newText) => {
+      setSearchQuery(prev => prev + newText)
+    },
+  })
+
+  // Handle search
+  const handleSearch = useCallback(async () => {
+    if (!searchQuery.trim()) return
+    
+    setIsSearching(true)
+    try {
+      const results = await searchRepo(searchQuery.trim())
+      setSearchResults(results)
+    } catch (err) {
+      console.error('Search failed:', err)
+      setSearchResults([])
+    }
+    setIsSearching(false)
+  }, [searchQuery])
+
+  // Search on Enter key
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch()
+    }
+  }, [handleSearch])
+
+  // Handle search recording
+  const handleSearchRecordingChange = useCallback((recording: boolean) => {
+    if (recording) {
+      searchTranscription.startRecording(0)
+    } else {
+      searchTranscription.stopRecording()
+    }
+  }, [searchTranscription])
 
   const loadDirectory = async (path: string) => {
     try {
@@ -418,6 +465,74 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
                 "{scope.selectedText.slice(0, 100)}{scope.selectedText.length > 100 ? '...' : ''}"
               </p>
             )}
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search repository..."
+              className="pl-8 h-9 text-sm"
+              disabled={isSearching || searchTranscription.isRecording}
+            />
+          </div>
+          <MicButton
+            recording={searchTranscription.isRecording}
+            transcribing={searchTranscription.isConnecting}
+            onRecordingChange={handleSearchRecordingChange}
+            size="sm"
+          />
+          <Button
+            size="sm"
+            onClick={handleSearch}
+            disabled={!searchQuery.trim() || isSearching}
+          >
+            {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
+          </Button>
+        </div>
+
+        {/* Search results */}
+        {searchResults.length > 0 && (
+          <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-muted/30">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setSearchResults([])}
+              >
+                <X className="h-3 w-3 mr-1" />
+                Clear
+              </Button>
+            </div>
+            <div className="space-y-1">
+              {searchResults.map((result, i) => (
+                <button
+                  key={i}
+                  onClick={() => selectFile(result.path)}
+                  className="w-full text-left p-1.5 rounded hover:bg-muted text-xs"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="font-medium truncate">{result.path}</span>
+                  </div>
+                  {result.matches[0] && (
+                    <p className="text-muted-foreground mt-0.5 line-clamp-1">
+                      ...{result.matches[0].fragment.slice(0, 80)}...
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
