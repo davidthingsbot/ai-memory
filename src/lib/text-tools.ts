@@ -17,6 +17,34 @@ interface TextContext {
   repoName?: string        // Repository name
 }
 
+export interface TextToolResult {
+  type: 'result' | 'question'
+  content: string
+}
+
+// Check if AI response is asking for clarification
+function parseResponse(response: string): TextToolResult {
+  // Check for clarification markers
+  const clarificationMarkers = [
+    /^CLARIFICATION:\s*/i,
+    /^QUESTION:\s*/i,
+    /^I need to ask:\s*/i,
+    /^Before I can proceed,?\s*/i,
+    /^Could you (please )?(clarify|explain|tell me)/i,
+  ]
+  
+  for (const marker of clarificationMarkers) {
+    if (marker.test(response.trim())) {
+      return {
+        type: 'question',
+        content: response.replace(marker, '').trim(),
+      }
+    }
+  }
+  
+  return { type: 'result', content: response }
+}
+
 /**
  * Tidy up text - fix formatting, spelling, grammar without changing content
  */
@@ -24,7 +52,7 @@ export async function tidyText(
   text: string,
   onProgress?: ProgressCallback,
   context?: TextContext
-): Promise<string> {
+): Promise<TextToolResult> {
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
 
@@ -54,7 +82,9 @@ export async function tidyText(
 ${context?.filePath ? `\nContext: This text is for "${context.filePath}"` : ''}
 ${context?.fileContent ? `\nExisting document content (for reference on proper names/terms):\n---\n${context.fileContent.slice(0, 2000)}\n---` : ''}
 
-Return ONLY the cleaned up text, nothing else.`
+If something is genuinely ambiguous and you cannot make a reasonable guess, start your response with "CLARIFICATION:" followed by a specific question. Only ask if truly necessary.
+
+Otherwise, return ONLY the cleaned up text, nothing else.`
         },
         { role: 'user', content: text }
       ],
@@ -72,8 +102,15 @@ Return ONLY the cleaned up text, nothing else.`
     throw new Error('No response from AI')
   }
 
-  onProgress?.('✓ Text tidied')
-  return result
+  const parsed = parseResponse(result)
+  
+  if (parsed.type === 'question') {
+    onProgress?.('❓ Clarification needed')
+  } else {
+    onProgress?.('✓ Text tidied')
+  }
+  
+  return parsed
 }
 
 /**
@@ -83,7 +120,7 @@ export async function improveText(
   text: string,
   onProgress?: ProgressCallback,
   context?: TextContext
-): Promise<string> {
+): Promise<TextToolResult> {
   const apiKey = getOpenAIKey()
   if (!apiKey) throw new Error('No OpenAI API key')
 
@@ -162,7 +199,9 @@ ${researchContext ? '\n- **From Research**: Specific information from the search
 Format as a clear, actionable checklist. Be specific - reference actual sentences or paragraphs.
 Use plain ASCII quotes (" and ') only.
 
-Return ONLY the improvement specification, not rewritten text.`
+If something is genuinely ambiguous (e.g., unclear acronyms, ambiguous references, missing critical context), start your response with "CLARIFICATION:" followed by a specific question. Only ask if truly necessary.
+
+Otherwise, return ONLY the improvement specification, not rewritten text.`
 
   let userContent = `Text to analyze:\n${text}`
   if (existingDocContext) {
@@ -198,6 +237,13 @@ Return ONLY the improvement specification, not rewritten text.`
     throw new Error('No response from AI')
   }
 
-  onProgress?.('✓ Improvement spec ready' + (researchContext ? ' (with research)' : ''))
-  return result
+  const parsed = parseResponse(result)
+  
+  if (parsed.type === 'question') {
+    onProgress?.('❓ Clarification needed')
+  } else {
+    onProgress?.('✓ Improvement spec ready' + (researchContext ? ' (with research)' : ''))
+  }
+  
+  return parsed
 }

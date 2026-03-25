@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { generateChangeSet, reviseChangeSet, type ChangeSet } from '@/lib/changeset-generator'
-import { tidyText, improveText } from '@/lib/text-tools'
+import { tidyText, improveText, type TextToolResult } from '@/lib/text-tools'
 import { commitChangeSet } from '@/lib/github-commit'
 import { clearContext, prefetchRepoStructure } from '@/lib/topic-finder'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
@@ -15,6 +15,7 @@ import {
 import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
 import { ChangeSetPreview } from './ChangeSetPreview'
+import { ClarificationDialog } from './ClarificationDialog'
 import type { BrowseScope } from './RepoBrowser'
 
 interface ContentEditorProps {
@@ -71,6 +72,15 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setUndoStack(prev => [...prev, rawContent])
     setRawContent(next)
   }, [redoStack, rawContent])
+
+  // Clarification dialog state
+  const [clarificationOpen, setClarificationOpen] = useState(false)
+  const [clarificationQuestion, setClarificationQuestion] = useState('')
+  const [pendingOperation, setPendingOperation] = useState<{
+    type: 'tidy' | 'improve'
+    originalText: string
+    context: any
+  } | null>(null)
 
   // Refs for textarea cursor position
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -225,6 +235,42 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setSteps(prev => [...prev, step])
   }, [])
 
+  // Handle clarification answer - retry the operation with additional context
+  const handleClarificationAnswer = useCallback(async (answer: string) => {
+    setClarificationOpen(false)
+    
+    if (!pendingOperation) return
+    
+    const { type, originalText, context } = pendingOperation
+    const augmentedText = `${originalText}\n\n[User clarification: ${answer}]`
+    
+    setIsWorking(true)
+    addStep(`Continuing ${type} with clarification...`)
+    
+    try {
+      let result: TextToolResult
+      if (type === 'tidy') {
+        result = await tidyText(augmentedText, addStep, context)
+      } else {
+        result = await improveText(augmentedText, addStep, context)
+      }
+      
+      if (result.type === 'question') {
+        // Still needs more clarification
+        setClarificationQuestion(result.content)
+        setPendingOperation({ type, originalText: augmentedText, context })
+        setClarificationOpen(true)
+      } else {
+        setRawContent(result.content)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${type} failed`)
+    }
+    
+    setIsWorking(false)
+    setPendingOperation(null)
+  }, [pendingOperation, addStep])
+
   // Main action: generate changeset
   const handleGenerate = useCallback(async () => {
     if (!rawContent.trim()) return
@@ -272,9 +318,19 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setIsWorking(true)
     
     try {
-      const result = await tidyText(rawContent, addStep, getTextContext())
-      setRawContent(result)
-      setIsWorking(false)
+      const ctx = getTextContext()
+      const result = await tidyText(rawContent, addStep, ctx)
+      
+      if (result.type === 'question') {
+        // AI needs clarification
+        setClarificationQuestion(result.content)
+        setPendingOperation({ type: 'tidy', originalText: rawContent, context: ctx })
+        setClarificationOpen(true)
+        setIsWorking(false)
+      } else {
+        setRawContent(result.content)
+        setIsWorking(false)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Tidy failed')
       setIsWorking(false)
@@ -292,9 +348,19 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
     setIsWorking(true)
     
     try {
-      const result = await improveText(rawContent, addStep, getTextContext())
-      setRawContent(result)
-      setIsWorking(false)
+      const ctx = getTextContext()
+      const result = await improveText(rawContent, addStep, ctx)
+      
+      if (result.type === 'question') {
+        // AI needs clarification
+        setClarificationQuestion(result.content)
+        setPendingOperation({ type: 'improve', originalText: rawContent, context: ctx })
+        setClarificationOpen(true)
+        setIsWorking(false)
+      } else {
+        setRawContent(result.content)
+        setIsWorking(false)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Improve failed')
       setIsWorking(false)
@@ -648,6 +714,18 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
           </div>
         )}
       </CardContent>
+
+      {/* Clarification dialog */}
+      <ClarificationDialog
+        open={clarificationOpen}
+        question={clarificationQuestion}
+        onAnswer={handleClarificationAnswer}
+        onCancel={() => {
+          setClarificationOpen(false)
+          setPendingOperation(null)
+        }}
+        context={getTextContext()}
+      />
     </Card>
   )
 }
