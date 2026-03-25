@@ -518,7 +518,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange, refreshPending }: Re
               {searchResults.map((result, i) => (
                 <button
                   key={i}
-                  onClick={() => selectFile(result.path)}
+                  onClick={() => handleNavigate(result.path)}
                   className="w-full text-left p-1.5 rounded hover:bg-muted text-xs"
                 >
                   <div className="flex items-center gap-1.5">
