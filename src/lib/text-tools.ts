@@ -195,6 +195,7 @@ In 2-3 short paragraphs, describe:
 - What should be written (the deliverable)
 - The key points to cover
 - The target audience and tone
+- Any diagrams, images, or visuals that would help (the generator can fetch images from URLs or request diagrams)
 
 Do NOT describe how the notes should be edited.
 Do NOT reference the original notes.
@@ -303,6 +304,8 @@ Create a detailed spec covering:
 **Required Sections**: Outline the structure with descriptions of each section
 
 **Key Content**: Specific points, facts, and details to include
+
+**Visuals & Diagrams**: Images to include, diagrams to create, or URLs to fetch images from (the generator can fetch images from URLs and create diagram descriptions)
 
 **Tone & Style**: How it should read (technical, casual, formal, etc.)
 ${researchContext ? '\n**Research to Incorporate**: Specific information from search results to include' : ''}
