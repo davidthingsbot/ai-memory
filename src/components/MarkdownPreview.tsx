@@ -1,11 +1,14 @@
 import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import rehypeRaw from 'rehype-raw'
+import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { getSelectedRepo } from './RepoSelection'
 import { findStagedImageByRelativePath } from '@/lib/image-store'
+import 'katex/dist/katex.min.css'
 
 interface MarkdownPreviewProps {
   content: string
@@ -120,8 +123,8 @@ export function MarkdownPreview({
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeRaw, rehypeKatex]}
         components={{
           // Code blocks with syntax highlighting
           code({ node, className, children, ...props }) {
