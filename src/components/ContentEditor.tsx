@@ -110,8 +110,6 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
 
   // Generate content
   const handleGenerate = useCallback(async () => {
-    if (!rawContent.trim()) return
-    
     setStage('generating')
     setError(null)
     setSteps([])
@@ -256,7 +254,6 @@ export function ContentEditor({ topicResult, onComplete }: ContentEditorProps) {
 
               <Button
                 onClick={handleGenerate}
-                disabled={!rawContent.trim()}
               >
                 <Sparkles className="h-4 w-4 mr-2" />
                 Generate

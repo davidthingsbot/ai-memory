@@ -103,17 +103,18 @@ You are UPDATING an existing document. Your task:
    - "markdown": the complete updated document
    - "commitMessage": a brief commit message describing the change
 `
+    const hasNotes = request.rawContent.trim().length > 0
     userPrompt = `## Existing Document (${request.topicResult.path})
 
 \`\`\`markdown
 ${existingContent}
 \`\`\`
 
-## New Content to Add
+## Task
 
-The user wants to add the following information:
-
-${request.rawContent}
+${hasNotes 
+  ? `The user wants to add the following information:\n\n${request.rawContent}` 
+  : `The user wants to expand or improve this document. No specific notes provided — review the document and suggest improvements, fill in gaps, or expand thin sections.`}
 
 ${request.feedback ? `## Additional Instructions\n\n${request.feedback}` : ''}
 
@@ -123,26 +124,32 @@ First, analyze the document structure and decide where this content should go. T
     systemPrompt += `
 You are CREATING a new document. Generate a complete, well-structured markdown file.
 
+If the user provides notes, incorporate them. If no notes are provided, create a reasonable starter document based on the topic/filename — include common sections, placeholders for key information, and helpful structure.
+
 Return a JSON object with:
 - "markdown": the complete document content
 - "commitMessage": a brief commit message describing what was added
 `
+    const hasNotes = request.rawContent.trim().length > 0
     userPrompt = `## New Document
 
 File: ${request.topicResult.path}
 Repository: ${repo.full_name}
+Topic reasoning: ${request.topicResult.reason}
 
-## User's Notes
-
-${request.rawContent}
+${hasNotes ? `## User's Notes\n\n${request.rawContent}` : '## No Notes Provided\n\nThe user wants to create this document but hasn\'t provided specific notes. Generate a well-structured starter document based on the filename and topic. Include relevant sections and placeholders.'}
 
 ${request.feedback ? `## Additional Instructions\n\n${request.feedback}` : ''}
 
-Please create a well-structured markdown document from these notes.`
+Please create a well-structured markdown document.`
   }
 
   onProgress?.(`Sending to AI (${getSelectedModel()})...`)
-  onProgress?.(`Input: ${request.rawContent.length} chars of user notes`)
+  if (request.rawContent.trim()) {
+    onProgress?.(`Input: ${request.rawContent.length} chars of user notes`)
+  } else {
+    onProgress?.('No additional notes — generating from topic/scope alone')
+  }
   if (request.feedback) {
     onProgress?.(`Feedback: "${request.feedback.slice(0, 50)}${request.feedback.length > 50 ? '...' : ''}"`)
   }
