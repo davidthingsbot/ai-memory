@@ -15,10 +15,14 @@ interface RepoBrowserProps {
 }
 
 export interface BrowseScope {
-  type: 'directory' | 'file' | 'selection'
+  type: 'directory' | 'file' | 'selection' | 'cursor'
   path: string
   selectedText?: string
   fileContent?: string
+  // For cursor/selection: character positions in the file
+  cursorPosition?: number
+  selectionStart?: number
+  selectionEnd?: number
 }
 
 interface TreeNode extends DirectoryEntry {
@@ -36,6 +40,13 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
   const [fileLoading, setFileLoading] = useState(false)
   const [scope, setScope] = useState<BrowseScope | null>(null)
   const [showRaw, setShowRaw] = useState(false)
+  
+  // Persistent selection/cursor in file preview
+  const [fileSelection, setFileSelection] = useState<{
+    start: number
+    end: number
+  } | null>(null)
+  const previewContentRef = useRef<HTMLDivElement>(null)
   
   // Refs for scrolling folders to top
   const treeContainerRef = useRef<HTMLDivElement>(null)
@@ -82,6 +93,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
   const toggleDirectory = async (node: TreeNode) => {
     setSelectedPath(node.path)
     setFileContent(null)
+    setFileSelection(null)
     
     const newScope: BrowseScope = { type: 'directory', path: node.path || '/' }
     setScope(newScope)
@@ -163,6 +175,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
     setSelectedPath(path)
     setFileLoading(true)
     setFileContent(null)
+    setFileSelection(null)
     
     try {
       const file = await readFile(path)
@@ -197,6 +210,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
       // Could be directory, try to load it
       setSelectedPath(path)
       setFileContent(null)
+      setFileSelection(null)
       const newScope: BrowseScope = { type: 'directory', path }
       setScope(newScope)
       onScopeSelect?.(newScope)
@@ -214,23 +228,101 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
     onScopeSelect?.(newScope)
   }, [fileContent, onScopeSelect])
 
+  // Handle text selection in raw view - calculates character positions
   const handleTextSelection = useCallback(() => {
     const selection = window.getSelection()
-    if (selection && selection.toString().trim() && selectedPath) {
-      const newScope: BrowseScope = {
-        type: 'selection',
-        path: selectedPath,
-        selectedText: selection.toString().trim(),
-        fileContent: fileContent || undefined,
+    if (!selection || !selectedPath || !fileContent) return
+    
+    const selectedText = selection.toString()
+    if (!selectedText.trim()) {
+      // Click without selection - set cursor position
+      // Try to get position from the raw content container
+      if (previewContentRef.current && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0)
+        const preContent = previewContentRef.current.querySelector('pre')
+        if (preContent && preContent.contains(range.startContainer)) {
+          // Calculate offset within the text
+          const treeWalker = document.createTreeWalker(
+            preContent,
+            NodeFilter.SHOW_TEXT,
+            null
+          )
+          let charCount = 0
+          let node: Node | null
+          while ((node = treeWalker.nextNode())) {
+            if (node === range.startContainer) {
+              charCount += range.startOffset
+              break
+            }
+            charCount += node.textContent?.length || 0
+          }
+          
+          setFileSelection({ start: charCount, end: charCount })
+          const newScope: BrowseScope = {
+            type: 'cursor',
+            path: selectedPath,
+            fileContent: fileContent,
+            cursorPosition: charCount,
+          }
+          setScope(newScope)
+          onScopeSelect?.(newScope)
+          onScopeChange?.()
+        }
       }
-      setScope(newScope)
-      onScopeSelect?.(newScope)
-      onScopeChange?.()
+      return
+    }
+    
+    // Has selection - calculate start and end positions
+    if (previewContentRef.current && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0)
+      const preContent = previewContentRef.current.querySelector('pre')
+      if (preContent && preContent.contains(range.startContainer)) {
+        const treeWalker = document.createTreeWalker(
+          preContent,
+          NodeFilter.SHOW_TEXT,
+          null
+        )
+        let charCount = 0
+        let startOffset = 0
+        let endOffset = 0
+        let foundStart = false
+        let foundEnd = false
+        let node: Node | null
+        
+        while ((node = treeWalker.nextNode())) {
+          if (node === range.startContainer && !foundStart) {
+            startOffset = charCount + range.startOffset
+            foundStart = true
+          }
+          if (node === range.endContainer && !foundEnd) {
+            endOffset = charCount + range.endOffset
+            foundEnd = true
+          }
+          if (foundStart && foundEnd) break
+          charCount += node.textContent?.length || 0
+        }
+        
+        if (foundStart && foundEnd) {
+          setFileSelection({ start: startOffset, end: endOffset })
+          const newScope: BrowseScope = {
+            type: 'selection',
+            path: selectedPath,
+            selectedText: selectedText.trim(),
+            fileContent: fileContent,
+            selectionStart: startOffset,
+            selectionEnd: endOffset,
+          }
+          setScope(newScope)
+          onScopeSelect?.(newScope)
+          onScopeChange?.()
+        }
+      }
     }
   }, [selectedPath, fileContent, onScopeSelect, onScopeChange])
 
   const clearScope = useCallback(() => {
     setScope(null)
+    setFileSelection(null)
     onScopeSelect?.(null)
   }, [onScopeSelect])
 
@@ -304,9 +396,14 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
             <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
               <Check className="h-4 w-4" />
               <span className="font-medium">
-                {scope.type === 'directory' ? 'Directory' : scope.type === 'file' ? 'File' : 'Selection'}:
+                {scope.type === 'directory' ? 'Directory' : 
+                 scope.type === 'file' ? 'File' : 
+                 scope.type === 'cursor' ? 'Cursor' : 'Selection'}:
               </span>
               <code className="text-xs">{scope.path}</code>
+              {scope.type === 'cursor' && scope.cursorPosition !== undefined && (
+                <span className="text-xs text-green-600">@ char {scope.cursorPosition}</span>
+              )}
             </div>
             {scope.selectedText && (
               <p className="text-xs mt-1 text-green-600 dark:text-green-400 italic truncate">
@@ -369,6 +466,7 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
             
             {/* Content */}
             <div 
+              ref={previewContentRef}
               className="overflow-y-auto p-4 max-h-96"
               onMouseUp={handleTextSelection}
             >
@@ -384,7 +482,27 @@ export function RepoBrowser({ onScopeSelect, onScopeChange }: RepoBrowserProps) 
                     onNavigate={handleNavigate}
                   />
                 ) : (
-                  <pre className="whitespace-pre-wrap font-mono text-xs text-muted-foreground">{fileContent}</pre>
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-muted-foreground select-text cursor-text">
+                    {fileSelection && fileSelection.start !== fileSelection.end ? (
+                      // Render with selection highlight
+                      <>
+                        {fileContent.slice(0, fileSelection.start)}
+                        <span className="bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100">
+                          {fileContent.slice(fileSelection.start, fileSelection.end)}
+                        </span>
+                        {fileContent.slice(fileSelection.end)}
+                      </>
+                    ) : fileSelection && fileSelection.start === fileSelection.end ? (
+                      // Render with cursor indicator
+                      <>
+                        {fileContent.slice(0, fileSelection.start)}
+                        <span className="border-l-2 border-blue-500 animate-pulse" />
+                        {fileContent.slice(fileSelection.start)}
+                      </>
+                    ) : (
+                      fileContent
+                    )}
+                  </pre>
                 )
               ) : (
                 <p className="text-muted-foreground italic text-center py-8">
