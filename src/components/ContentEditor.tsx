@@ -16,6 +16,7 @@ import { MicButton } from './MicButton'
 import { WorkingBox } from './WorkingBox'
 import { ChangeSetPreview } from './ChangeSetPreview'
 import { ClarificationBox } from './ClarificationBox'
+import { ImageUpload } from './ImageUpload'
 import type { BrowseScope } from './RepoBrowser'
 
 interface ContentEditorProps {
@@ -711,6 +712,19 @@ export function ContentEditor({ scope, repoName, onComplete }: ContentEditorProp
             </div>
           )}
         </div>
+
+        {/* Image Upload - for adding images to the changeset */}
+        {stage === 'input' && (
+          <ImageUpload 
+            targetDir={
+              scope?.type === 'file' 
+                ? scope.path.split('/').slice(0, -1).concat('images').join('/') || 'images'
+                : scope?.type === 'directory'
+                  ? `${scope.path}/images`.replace(/^\//, '')
+                  : 'images'
+            }
+          />
+        )}
 
         {/* WorkingBox - always visible when there are steps */}
         {steps.length > 0 && (

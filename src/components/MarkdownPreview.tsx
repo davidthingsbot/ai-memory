@@ -5,6 +5,7 @@ import rehypeRaw from 'rehype-raw'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { getSelectedRepo } from './RepoSelection'
+import { findStagedImageByRelativePath } from '@/lib/image-store'
 
 interface MarkdownPreviewProps {
   content: string
@@ -22,13 +23,19 @@ export function MarkdownPreview({
   const repo = getSelectedRepo()
   const repoFullName = repo?.full_name || ''
 
-  // Convert relative image URLs to raw GitHub URLs
+  // Convert relative image URLs to raw GitHub URLs (or staged image data URLs)
   const resolveImageUrl = (src: string): string => {
     if (!src) return src
     
-    // Already absolute URL
+    // Already absolute URL or data URL
     if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
       return src
+    }
+    
+    // Check if this is a staged image first (for preview before commit)
+    const stagedImage = findStagedImageByRelativePath(src, basePath)
+    if (stagedImage) {
+      return stagedImage.dataUrl
     }
     
     // Resolve relative path

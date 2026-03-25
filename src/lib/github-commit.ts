@@ -1,6 +1,7 @@
 import { Octokit } from 'octokit'
 import { getSelectedRepo, getSelectedRepoToken } from '@/components/RepoSelection'
 import type { ChangeSet } from './changeset-generator'
+import { getAllStagedImages, clearStagedImages, dataUrlToBase64 } from './image-store'
 
 interface CommitResult {
   success: boolean
@@ -133,6 +134,26 @@ export async function commitChangeSet(
       content?: string
     }> = []
 
+    // Include staged images in the commit
+    const stagedImages = getAllStagedImages()
+    for (const image of stagedImages) {
+      const base64Content = dataUrlToBase64(image.dataUrl)
+      if (base64Content) {
+        const { data: blobData } = await octokit.rest.git.createBlob({
+          owner,
+          repo: repoName,
+          content: base64Content,
+          encoding: 'base64', // Images are base64 encoded
+        })
+        treeEntries.push({
+          path: image.path,
+          mode: '100644',
+          type: 'blob',
+          sha: blobData.sha,
+        })
+      }
+    }
+
     for (const change of changeSet.changes) {
       if (change.action === 'delete') {
         // For deletes, set sha to null
@@ -206,11 +227,17 @@ export async function commitChangeSet(
       sha: newCommit.sha,
     })
 
+    // Clear staged images after successful commit
+    const imagesCommitted = stagedImages.length
+    if (imagesCommitted > 0) {
+      clearStagedImages()
+    }
+
     return {
       success: true,
       sha: newCommit.sha,
       url: `https://github.com/${owner}/${repoName}/commit/${newCommit.sha}`,
-      filesChanged: changeSet.changes.length,
+      filesChanged: changeSet.changes.length + imagesCommitted,
     }
   } catch (err) {
     console.error('Multi-file commit failed:', err)
