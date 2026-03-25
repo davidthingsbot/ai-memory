@@ -65,19 +65,23 @@ export function createTranscriptionSession(
       ws.onopen = async () => {
         connected = true
 
-        // Configure session for transcription only
+        // Configure session for transcription only (no audio output)
         ws?.send(JSON.stringify({
           type: 'session.update',
           session: {
+            type: 'realtime',
             modalities: ['text'], // Text only - no audio output
-            input_audio_transcription: {
-              model: 'whisper-1',
-            },
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500,
+            audio: {
+              input: {
+                format: { type: 'audio/pcm', rate: 24000 },
+                transcription: { model: 'whisper-1' },
+                turn_detection: {
+                  type: 'server_vad',
+                  threshold: 0.5,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 500,
+                },
+              },
             },
           },
         }))
