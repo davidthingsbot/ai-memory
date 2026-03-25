@@ -85,12 +85,38 @@ export async function generateChangeSet(
         }
       }
     } else if (request.scope.type === 'selection') {
-      // Selection context
+      // Selection context - user selected specific text
       const content = request.scope.fileContent || await fetchContent(request.scope.path)
       if (content) {
         existingFiles.push({ path: request.scope.path, content })
       }
-      contextInfo = `Selected passage from ${request.scope.path}:\n> ${request.selectionContext || request.scope.selectedText}`
+      const selectedText = request.selectionContext || request.scope.selectedText || ''
+      contextInfo = `Selected passage from ${request.scope.path}:\n> ${selectedText}`
+      
+      // Include position info if available
+      if (request.scope.selectionStart !== undefined && request.scope.selectionEnd !== undefined) {
+        contextInfo += `\n\n(Selection is at characters ${request.scope.selectionStart}-${request.scope.selectionEnd} in the file)`
+        contextInfo += `\nIMPORTANT: The user selected this text. When updating the file, this is the area they want to modify or expand upon.`
+      }
+      if (content) {
+        contextInfo += `\n\nFull file content:\n\`\`\`\n${content}\n\`\`\``
+      }
+    } else if (request.scope.type === 'cursor') {
+      // Cursor context - user placed cursor at specific position
+      const content = request.scope.fileContent || await fetchContent(request.scope.path)
+      if (content) {
+        existingFiles.push({ path: request.scope.path, content })
+      }
+      const cursorPos = request.scope.cursorPosition ?? 0
+      
+      // Show context around cursor position
+      const before = content?.slice(Math.max(0, cursorPos - 100), cursorPos) || ''
+      const after = content?.slice(cursorPos, cursorPos + 100) || ''
+      
+      contextInfo = `Cursor position in ${request.scope.path} at character ${cursorPos}:`
+      contextInfo += `\n\nText before cursor:\n> ...${before}`
+      contextInfo += `\n\nText after cursor:\n> ${after}...`
+      contextInfo += `\n\nIMPORTANT: The user placed their cursor at this position. When updating the file, INSERT new content at this exact location (character ${cursorPos}).`
       if (content) {
         contextInfo += `\n\nFull file content:\n\`\`\`\n${content}\n\`\`\``
       }
