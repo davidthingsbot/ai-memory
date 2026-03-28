@@ -10,7 +10,7 @@ import Editor from '@monaco-editor/react'
 import { 
   FolderOpen, FileText, ChevronRight, Home,
   Loader2, Eye, Code, Edit3, Search, X,
-  Plus, Pencil, Image
+  Plus, Pencil, Image, Save
 } from 'lucide-react'
 
 export function RepositoryTab() {
@@ -20,7 +20,25 @@ export function RepositoryTab() {
     selectedFile, fileContent, selectFile, clearSelectedFile, setFileContent,
     viewMode, setViewMode,
     openPromptModal,
+    setActiveTab,
+    addPendingChange,
   } = useAppStore()
+  
+  // Guard: redirect to setup if no repo selected
+  if (!selectedRepoFullName) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+        <FolderOpen className="h-12 w-12 text-muted-foreground mb-4" />
+        <h2 className="text-xl font-semibold mb-2">No Repository Selected</h2>
+        <p className="text-muted-foreground mb-4">
+          Please complete the setup first.
+        </p>
+        <Button onClick={() => setActiveTab('setup')}>
+          Go to Setup
+        </Button>
+      </div>
+    )
+  }
   
   // Directory state
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
@@ -159,6 +177,20 @@ export function RepositoryTab() {
       openPromptModal({ type: 'add-image', path: selectedFile })
     }
   }, [selectedFile, openPromptModal])
+  
+  // Save edited content as pending change
+  const handleSave = useCallback(() => {
+    if (selectedFile && fileContent && editorDirty) {
+      addPendingChange({
+        path: selectedFile,
+        action: 'modify',
+        content: fileContent,
+        oldContent: originalContent || undefined,
+      })
+      setOriginalContent(fileContent)
+      setEditorDirty(false)
+    }
+  }, [selectedFile, fileContent, editorDirty, originalContent, addPendingChange])
   
   return (
     <div className="flex flex-col h-full">
@@ -357,7 +389,13 @@ export function RepositoryTab() {
             </div>
             
             {/* Operations toolbar */}
-            <div className="border-t px-4 py-2 bg-muted/30 flex gap-2">
+            <div className="border-t px-4 py-2 bg-muted/30 flex gap-2 flex-wrap">
+              {editorDirty && (
+                <Button variant="default" size="sm" onClick={handleSave} className="gap-1">
+                  <Save className="h-3.5 w-3.5" />
+                  Stage Changes
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleInsert} className="gap-1">
                 <Plus className="h-3.5 w-3.5" />
                 Insert Section
