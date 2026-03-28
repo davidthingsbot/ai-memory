@@ -7,7 +7,7 @@ interface BlinkingCursorProps {
 
 export function BlinkingCursor({ visible, recording = false }: BlinkingCursorProps) {
   const cursorRef = useRef<HTMLSpanElement>(null)
-  const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
+  const [position, setPosition] = useState<{ top: number; left: number; height: number } | null>(null)
 
   useEffect(() => {
     if (!visible) {
@@ -22,18 +22,24 @@ export function BlinkingCursor({ visible, recording = false }: BlinkingCursorPro
         return
       }
 
+      // Only show cursor for collapsed caret, not text selections
+      if (!selection.isCollapsed) {
+        setPosition(null)
+        return
+      }
+
       const range = selection.getRangeAt(0)
-      const rect = range.getBoundingClientRect()
-      
-      if (rect.width === 0 && rect.height === 0) {
-        // Collapsed selection (just a cursor position) - use caret position
-        const caretRect = range.getClientRects()[0]
-        if (caretRect) {
-          setPosition({ top: caretRect.top, left: caretRect.left })
-        }
+      const rects = range.getClientRects()
+      if (rects.length > 0) {
+        setPosition({ top: rects[0].top, left: rects[0].left, height: rects[0].height })
       } else {
-        // Selection exists - put cursor at end
-        setPosition({ top: rect.top, left: rect.right })
+        // Fallback for positions between block elements
+        const rect = range.getBoundingClientRect()
+        if (rect.height > 0) {
+          setPosition({ top: rect.top, left: rect.left, height: rect.height })
+        } else {
+          setPosition(null)
+        }
       }
     }
 
@@ -55,7 +61,7 @@ export function BlinkingCursor({ visible, recording = false }: BlinkingCursorPro
       style={{
         top: position.top,
         left: position.left,
-        height: '1.2em',
+        height: position.height,
       }}
     >
       {/* Blinking cursor line */}

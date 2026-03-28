@@ -8,7 +8,11 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 const REPO_NAME = 'ai-memory'
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode }): import('vite').UserConfig & { test?: import('vitest/config').UserConfig['test'] } => ({
+  test: {
+    environment: 'jsdom',
+    globals: true,
+  },
   // Base path: '/' for dev, '/repo-name/' for production (GitHub Pages)
   base: mode === 'production' ? `/${REPO_NAME}/` : '/',
   plugins: [react(), tailwindcss(), basicSsl()],

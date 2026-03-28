@@ -1,6 +1,7 @@
 import { Octokit } from 'octokit'
 import { getSerperKey } from '@/components/Credentials'
 import { getSelectedRepo, getSelectedRepoToken } from '@/components/RepoSelection'
+import { useAppStore } from '@/store'
 
 export interface DirectoryEntry {
   name: string
@@ -37,6 +38,14 @@ function getRepoInfo(): { owner: string; repo: string } {
   return { owner: repo.owner.login, repo: repo.name }
 }
 
+/** Get the active branch — store override or repo default */
+export function getActiveBranch(): string {
+  const storeBranch = useAppStore.getState().selectedBranch
+  if (storeBranch) return storeBranch
+  const repo = getSelectedRepo()
+  return repo?.default_branch || 'main'
+}
+
 /**
  * List contents of a directory in the repository
  */
@@ -49,6 +58,7 @@ export async function listDirectory(path: string = ''): Promise<DirectoryEntry[]
       owner,
       repo,
       path: path || '',
+      ref: getActiveBranch(),
     })
 
     if (!Array.isArray(response.data)) {
@@ -82,6 +92,7 @@ export async function readFile(path: string): Promise<FileContent | null> {
       owner,
       repo,
       path,
+      ref: getActiveBranch(),
     })
 
     if (Array.isArray(response.data)) {
@@ -121,6 +132,7 @@ export async function getFileAsDataUrl(path: string): Promise<string | null> {
       owner,
       repo,
       path,
+      ref: getActiveBranch(),
     })
 
     if (Array.isArray(response.data) || response.data.type !== 'file' || !('content' in response.data)) {
@@ -137,6 +149,9 @@ export async function getFileAsDataUrl(path: string): Promise<string | null> {
       'webp': 'image/webp',
       'svg': 'image/svg+xml',
       'ico': 'image/x-icon',
+      'bmp': 'image/bmp',
+      'avif': 'image/avif',
+      'pdf': 'application/pdf',
     }
     const mimeType = mimeTypes[ext] || 'application/octet-stream'
 
@@ -185,7 +200,7 @@ export async function getRepoTree(maxDepth: number = 3): Promise<DirectoryEntry[
     const response = await octokit.rest.git.getTree({
       owner,
       repo,
-      tree_sha: selectedRepo?.default_branch || 'main',
+      tree_sha: getActiveBranch(),
       recursive: 'true',
     })
 

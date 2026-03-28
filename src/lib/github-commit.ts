@@ -1,5 +1,6 @@
 import { Octokit } from 'octokit'
 import { getSelectedRepo, getSelectedRepoToken } from '@/components/RepoSelection'
+import { getActiveBranch } from './github-tools'
 import type { ChangeSet } from './changeset-generator'
 import type { FileChange } from '@/store'
 import { getAllStagedImages, clearStagedImages, dataUrlToBase64 } from './image-store'
@@ -66,7 +67,7 @@ export async function commitFile(
       message,
       content: btoa(unescape(encodeURIComponent(content))), // UTF-8 safe base64
       sha: existingSha, // Required for updates
-      branch: repo.default_branch,
+      branch: getActiveBranch(),
     })
 
     return {
@@ -107,7 +108,7 @@ export async function commitChangeSet(
   const octokit = new Octokit({ auth: token })
   const owner = repo.owner.login
   const repoName = repo.name
-  const branch = repo.default_branch
+  const branch = getActiveBranch()
 
   try {
     // 1. Get the current commit SHA for the branch
@@ -275,7 +276,7 @@ export async function commitFiles(
   const octokit = new Octokit({ auth: token })
   const owner = repo.owner.login
   const repoName = repo.name
-  const branch = repo.default_branch
+  const branch = getActiveBranch()
 
   try {
     // 1. Get the current commit SHA for the branch

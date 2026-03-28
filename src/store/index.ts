@@ -39,7 +39,13 @@ export interface AppState {
   // Prompt modal state
   promptModalOpen: boolean
   promptModalOperation: Operation | null
-  
+
+  // Branch
+  selectedBranch: string | null
+
+  // Theme
+  darkMode: boolean
+
   // Actions
   setSetupComplete: (complete: boolean) => void
   setSelectedRepoFullName: (name: string | null) => void
@@ -53,8 +59,10 @@ export interface AppState {
   removePendingChange: (path: string) => void
   clearPendingChanges: () => void
   setCommitMessage: (message: string) => void
+  setSelectedBranch: (branch: string | null) => void
   openPromptModal: (operation: Operation) => void
   closePromptModal: () => void
+  toggleDarkMode: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -72,6 +80,8 @@ export const useAppStore = create<AppState>()(
       commitMessage: '',
       promptModalOpen: false,
       promptModalOperation: null,
+      selectedBranch: null,
+      darkMode: true,
       
       // Actions
       setSetupComplete: (complete) => set({ 
@@ -108,6 +118,7 @@ export const useAppStore = create<AppState>()(
         commitMessage: '' 
       }),
       setCommitMessage: (message) => set({ commitMessage: message }),
+      setSelectedBranch: (branch) => set({ selectedBranch: branch }),
       openPromptModal: (operation) => set({
         promptModalOpen: true,
         promptModalOperation: operation,
@@ -116,13 +127,21 @@ export const useAppStore = create<AppState>()(
         promptModalOpen: false,
         promptModalOperation: null,
       }),
+      toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
     }),
     {
       name: 'ai-memory-v2-store',
       partialize: (state) => ({
-        // Only persist these fields
         setupComplete: state.setupComplete,
         selectedRepoFullName: state.selectedRepoFullName,
+        selectedBranch: state.selectedBranch,
+        activeTab: state.activeTab,
+        currentPath: state.currentPath,
+        selectedFile: state.selectedFile,
+        viewMode: state.viewMode,
+        pendingChanges: state.pendingChanges,
+        commitMessage: state.commitMessage,
+        darkMode: state.darkMode,
       }),
     }
   )

@@ -3,29 +3,34 @@ import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { commitFiles } from '@/lib/github-commit'
+import { MarkdownPreview } from '@/components/MarkdownPreview'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
-import { 
+import {
   GitCommit, Trash2, Upload, Loader2, Check,
   ChevronDown, ChevronRight, FileText, ExternalLink,
-  Undo2
+  Undo2, Eye, Code
 } from 'lucide-react'
 
+type FileViewMode = 'preview' | 'raw'
+
 export function CommitTab() {
-  const { 
-    pendingChanges, 
-    removePendingChange, 
+  const {
+    pendingChanges,
+    removePendingChange,
     clearPendingChanges,
-    commitMessage, 
+    commitMessage,
     setCommitMessage,
     setActiveTab,
+    darkMode,
   } = useAppStore()
-  
+
   const [isCommitting, setIsCommitting] = useState(false)
   const [isPushing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [commitUrl, setCommitUrl] = useState<string | null>(null)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
-  
+  const [fileViewModes, setFileViewModes] = useState<Record<string, FileViewMode>>({})
+
   // Auto-generate commit message when changes update
   useEffect(() => {
     if (pendingChanges.length > 0 && !commitMessage) {
@@ -35,7 +40,7 @@ export function CommitTab() {
       setCommitMessage(summary)
     }
   }, [pendingChanges, commitMessage, setCommitMessage])
-  
+
   // Toggle file expansion
   const toggleFile = useCallback((path: string) => {
     setExpandedFiles(prev => {
@@ -48,17 +53,29 @@ export function CommitTab() {
       return next
     })
   }, [])
-  
+
+  // Get view mode for a file (default: preview for markdown, raw for others)
+  const getFileViewMode = useCallback((path: string): FileViewMode => {
+    if (fileViewModes[path]) return fileViewModes[path]
+    const isMarkdown = /\.mdx?$/i.test(path)
+    return isMarkdown ? 'preview' : 'raw'
+  }, [fileViewModes])
+
+  // Set view mode for a file
+  const setFileViewMode = useCallback((path: string, mode: FileViewMode) => {
+    setFileViewModes(prev => ({ ...prev, [path]: mode }))
+  }, [])
+
   // Handle commit
   const handleCommit = useCallback(async () => {
     if (pendingChanges.length === 0 || !commitMessage.trim()) return
-    
+
     setIsCommitting(true)
     setError(null)
-    
+
     try {
       const result = await commitFiles(pendingChanges, commitMessage)
-      
+
       if (result.success) {
         setCommitUrl(result.url || null)
       } else {
@@ -70,14 +87,12 @@ export function CommitTab() {
       setIsCommitting(false)
     }
   }, [pendingChanges, commitMessage])
-  
+
   // Handle push (commit is already pushed in our implementation)
   const handlePush = useCallback(async () => {
-    // In our implementation, commit already pushes to GitHub
-    // This is just for the two-button UX pattern
     await handleCommit()
   }, [handleCommit])
-  
+
   // Handle discard all
   const handleDiscardAll = useCallback(() => {
     if (confirm('Discard all pending changes?')) {
@@ -85,14 +100,14 @@ export function CommitTab() {
       setCommitUrl(null)
     }
   }, [clearPendingChanges])
-  
+
   // Handle done (go back to repository)
   const handleDone = useCallback(() => {
     clearPendingChanges()
     setCommitUrl(null)
     setActiveTab('repository')
   }, [clearPendingChanges, setActiveTab])
-  
+
   // Count additions/deletions
   const countChanges = (oldContent: string | undefined, newContent: string | undefined) => {
     const oldLines = (oldContent || '').split('\n').length
@@ -101,9 +116,8 @@ export function CommitTab() {
     const removed = Math.max(0, oldLines - newLines)
     return { added, removed }
   }
-  
+
   if (commitUrl) {
-    // Success state
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
         <div className="rounded-full bg-green-100 dark:bg-green-900/30 p-4 mb-4">
@@ -127,9 +141,8 @@ export function CommitTab() {
       </div>
     )
   }
-  
+
   if (pendingChanges.length === 0) {
-    // Empty state
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
         <GitCommit className="h-12 w-12 text-muted-foreground mb-4" />
@@ -143,7 +156,7 @@ export function CommitTab() {
       </div>
     )
   }
-  
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -162,13 +175,16 @@ export function CommitTab() {
           </Button>
         </div>
       </div>
-      
+
       {/* Changes list */}
       <div className="flex-1 overflow-auto p-4 space-y-2">
         {pendingChanges.map(change => {
           const { added, removed } = countChanges(change.oldContent, change.content)
           const isExpanded = expandedFiles.has(change.path)
-          
+          const viewMode = getFileViewMode(change.path)
+          const isMarkdown = /\.mdx?$/i.test(change.path)
+          const hasDiff = change.action === 'modify' && change.oldContent != null
+
           return (
             <div key={change.path} className="border rounded-lg overflow-hidden">
               {/* File header */}
@@ -204,38 +220,113 @@ export function CommitTab() {
                   <Undo2 className="h-3.5 w-3.5" />
                 </Button>
               </button>
-              
-              {/* Diff view */}
+
+              {/* Expanded content */}
               {isExpanded && (
-                <div className="max-h-64 overflow-auto text-xs">
-                  {change.action === 'create' ? (
-                    <pre className="p-3 bg-green-50 dark:bg-green-950/20 text-green-800 dark:text-green-200">
-                      {change.content}
-                    </pre>
-                  ) : change.action === 'delete' ? (
-                    <pre className="p-3 bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-200">
-                      {change.oldContent}
-                    </pre>
-                  ) : (
-                    <ReactDiffViewer
-                      oldValue={change.oldContent || ''}
-                      newValue={change.content || ''}
-                      splitView={false}
-                      compareMethod={DiffMethod.WORDS}
-                      useDarkTheme={document.documentElement.classList.contains('dark')}
-                      hideLineNumbers
-                      styles={{
-                        contentText: { fontSize: '11px', fontFamily: 'monospace' }
-                      }}
-                    />
-                  )}
+                <div>
+                  {/* View mode toggle */}
+                  <div className="flex items-center gap-1 px-3 py-1.5 border-b bg-muted/30">
+                    <div className="flex rounded-md border overflow-hidden">
+                      <Button
+                        variant={viewMode === 'preview' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="rounded-none h-6 px-2 text-xs"
+                        onClick={(e) => { e.stopPropagation(); setFileViewMode(change.path, 'preview') }}
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        Preview
+                      </Button>
+                      <Button
+                        variant={viewMode === 'raw' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="rounded-none h-6 px-2 text-xs"
+                        onClick={(e) => { e.stopPropagation(); setFileViewMode(change.path, 'raw') }}
+                      >
+                        <Code className="h-3 w-3 mr-1" />
+                        Raw
+                      </Button>
+                    </div>
+                    {hasDiff && (
+                      <span className="text-xs text-muted-foreground ml-2">diff</span>
+                    )}
+                  </div>
+
+                  {/* File content */}
+                  <div className="max-h-96 overflow-auto">
+                    {viewMode === 'raw' ? (
+                      /* Raw mode */
+                      hasDiff ? (
+                        <ReactDiffViewer
+                          oldValue={change.oldContent || ''}
+                          newValue={change.content || ''}
+                          splitView={false}
+                          compareMethod={DiffMethod.WORDS}
+                          useDarkTheme={darkMode}
+                          hideLineNumbers
+                          styles={{
+                            contentText: { fontSize: '11px', fontFamily: 'monospace' }
+                          }}
+                        />
+                      ) : change.action === 'delete' ? (
+                        <pre className="p-3 text-xs font-mono whitespace-pre-wrap bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-200">
+                          {change.oldContent}
+                        </pre>
+                      ) : (
+                        <pre className="p-3 text-xs font-mono whitespace-pre-wrap bg-green-50 dark:bg-green-950/20 text-green-800 dark:text-green-200">
+                          {change.content}
+                        </pre>
+                      )
+                    ) : (
+                      /* Preview mode */
+                      hasDiff ? (
+                        <div className="grid grid-cols-2 divide-x">
+                          <div className="p-3 overflow-auto">
+                            <div className="text-xs font-medium text-muted-foreground mb-2">Before</div>
+                            {isMarkdown ? (
+                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
+                                <MarkdownPreview content={change.oldContent || ''} darkMode={darkMode} />
+                              </div>
+                            ) : (
+                              <pre className="text-xs font-mono whitespace-pre-wrap">{change.oldContent}</pre>
+                            )}
+                          </div>
+                          <div className="p-3 overflow-auto">
+                            <div className="text-xs font-medium text-muted-foreground mb-2">After</div>
+                            {isMarkdown ? (
+                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
+                                <MarkdownPreview content={change.content || ''} darkMode={darkMode} />
+                              </div>
+                            ) : (
+                              <pre className="text-xs font-mono whitespace-pre-wrap">{change.content}</pre>
+                            )}
+                          </div>
+                        </div>
+                      ) : change.action === 'delete' ? (
+                        <div className="p-3 opacity-60">
+                          {isMarkdown ? (
+                            <MarkdownPreview content={change.oldContent || ''} darkMode={darkMode} />
+                          ) : (
+                            <pre className="text-xs font-mono whitespace-pre-wrap">{change.oldContent}</pre>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="p-3">
+                          {isMarkdown ? (
+                            <MarkdownPreview content={change.content || ''} darkMode={darkMode} />
+                          ) : (
+                            <pre className="text-xs font-mono whitespace-pre-wrap">{change.content}</pre>
+                          )}
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           )
         })}
       </div>
-      
+
       {/* Commit section */}
       <div className="border-t p-4 space-y-3">
         <div>
@@ -247,11 +338,11 @@ export function CommitTab() {
             className="font-mono text-sm"
           />
         </div>
-        
+
         {error && (
           <p className="text-sm text-destructive">{error}</p>
         )}
-        
+
         <div className="flex gap-2 justify-end">
           <Button
             onClick={handleCommit}

@@ -3,6 +3,7 @@ import { useAppStore } from '@/store'
 import { Credentials } from '@/components/Credentials'
 import { ModelSelector } from '@/components/ModelSelector'
 import { RepoSelection, type Repository } from '@/components/RepoSelection'
+import { BranchSelector } from '@/components/BranchSelector'
 import { Button } from '@/components/ui/button'
 import { Check, ArrowRight } from 'lucide-react'
 
@@ -33,13 +34,17 @@ export function SetupTab() {
     }
   }, [setupReady, setSetupComplete, setActiveTab])
   
-  // Auto-continue when all requirements met (for returning users)
+  // Restore saved credentials on mount. Only auto-redirect if setup
+  // isn't already marked complete (i.e., first time with saved creds).
+  // Once complete, activeTab is persisted in the store — the user lands
+  // wherever they left off, and can always click the Setup tab to return.
+  const { setupComplete } = useAppStore()
+
   useEffect(() => {
-    // Check localStorage for existing setup
     const storedOpenAI = localStorage.getItem('ai-memory:openai-key')
     const storedTokens = localStorage.getItem('ai-memory:github-tokens')
     const storedRepo = localStorage.getItem('ai-memory:selected-repo')
-    
+
     if (storedOpenAI && storedTokens && storedRepo) {
       try {
         const repo = JSON.parse(storedRepo) as Repository
@@ -47,17 +52,18 @@ export function SetupTab() {
         setSelectedRepoFullName(repo.full_name)
         setHasOpenAI(true)
         setHasGitHub(true)
-        // Auto-proceed to repository tab
-        setSetupComplete(true)
-        setActiveTab('repository')
+        // Auto-redirect only when setup wasn't already completed
+        if (!setupComplete) {
+          setSetupComplete(true)
+        }
       } catch {
         // Invalid stored data, stay on setup
       }
     }
-  }, [setSelectedRepoFullName, setSetupComplete, setActiveTab])
+  }, [setSelectedRepoFullName, setSetupComplete, setupComplete])
   
   return (
-    <div className="max-w-2xl mx-auto space-y-6 p-6">
+    <div className="max-w-2xl mx-auto space-y-6 p-6 overflow-auto h-full">
       <div className="text-center mb-8">
         <h2 className="text-2xl font-bold mb-2">Setup</h2>
         <p className="text-muted-foreground">
@@ -75,7 +81,10 @@ export function SetupTab() {
       {credentialsReady && (
         <RepoSelection onRepoChange={handleRepoChange} />
       )}
-      
+
+      {/* Step 4: Branch Selection */}
+      {selectedRepo && <BranchSelector />}
+
       {/* Continue button */}
       {setupReady && (
         <div className="flex justify-center pt-4">
@@ -97,6 +106,9 @@ export function SetupTab() {
         </span>
         <span className={selectedRepo ? 'text-green-600' : ''}>
           {selectedRepo ? '✓' : '○'} Repository
+        </span>
+        <span className={selectedRepo ? 'text-green-600' : ''}>
+          {selectedRepo ? '✓' : '○'} Branch
         </span>
       </div>
     </div>

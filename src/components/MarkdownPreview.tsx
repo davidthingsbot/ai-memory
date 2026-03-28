@@ -5,7 +5,7 @@ import remarkMath from 'remark-math'
 import rehypeRaw from 'rehype-raw'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 import { findStagedImageByRelativePath } from '@/lib/image-store'
 import { getFileAsDataUrl } from '@/lib/github-tools'
@@ -15,6 +15,7 @@ interface MarkdownPreviewProps {
   content: string
   basePath?: string // Current file's directory path for resolving relative links
   onNavigate?: (path: string) => void // Called when clicking internal links
+  darkMode?: boolean
   className?: string
 }
 
@@ -103,48 +104,56 @@ function AsyncImage({
 
   if (loading) {
     return (
-      <div className="inline-flex items-center gap-2 text-muted-foreground text-sm p-2 border rounded">
+      <span className="inline-flex items-center gap-2 text-muted-foreground text-sm p-2 border rounded">
         <span className="animate-pulse">Loading image...</span>
-      </div>
+      </span>
     )
   }
 
   if (error || !imageSrc) {
     return (
-      <div 
+      <span
         className="inline-block p-4 border-2 border-dashed border-red-400 rounded text-sm text-red-600"
         title={error || 'Unknown error'}
       >
-        📷 {error || `Failed to load: ${src}`}
-      </div>
+        {error || `Failed to load: ${src}`}
+      </span>
     )
   }
 
   return (
-    <img 
-      src={imageSrc} 
-      alt={alt} 
+    <img
+      src={imageSrc}
+      alt={alt}
+      data-original-src={src}
       className={className || 'max-w-full h-auto rounded-lg'}
       loading="lazy"
     />
   )
 }
 
-export function MarkdownPreview({ 
-  content, 
-  basePath = '', 
+export const MarkdownPreview = React.memo(function MarkdownPreview({
+  content,
+  basePath = '',
   onNavigate,
+  darkMode = true,
   className = ''
 }: MarkdownPreviewProps) {
-  // Handle link clicks
+  // Handle link clicks — require Ctrl/Cmd+click to follow
   const handleLinkClick = (href: string, e: React.MouseEvent) => {
     if (!href) return
-    
+
+    // Require Ctrl (or Cmd on Mac) to follow any link
+    if (!e.ctrlKey && !e.metaKey) {
+      e.preventDefault()
+      return
+    }
+
     // External links - open in new tab
     if (href.startsWith('http://') || href.startsWith('https://')) {
       return // Let default behavior handle it
     }
-    
+
     // Anchor links - scroll within page
     if (href.startsWith('#')) {
       const element = document.getElementById(href.slice(1))
@@ -154,18 +163,18 @@ export function MarkdownPreview({
       }
       return
     }
-    
+
     // Internal repo links
     if (onNavigate) {
       e.preventDefault()
-      
+
       let resolvedPath = href
       if (href.startsWith('./')) {
         resolvedPath = basePath ? `${basePath}/${href.slice(2)}` : href.slice(2)
       } else if (href.startsWith('../')) {
         const baseSegments = basePath.split('/').filter(Boolean)
         const hrefSegments = href.split('/')
-        
+
         for (const segment of hrefSegments) {
           if (segment === '..') {
             baseSegments.pop()
@@ -179,7 +188,7 @@ export function MarkdownPreview({
       } else {
         resolvedPath = href.slice(1)
       }
-      
+
       // Remove anchor from path for navigation
       const [pathWithoutAnchor] = resolvedPath.split('#')
       onNavigate(pathWithoutAnchor)
@@ -195,22 +204,26 @@ export function MarkdownPreview({
           // Code blocks with syntax highlighting
           code({ node, className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '')
-            const isInline = !match && !className
-            
-            if (isInline) {
+            // Fenced code blocks (with or without language) have a <pre> parent
+            const isBlock = node?.position?.start.line !== node?.position?.end.line
+              || Boolean(className)
+              || String(children).includes('\n')
+
+            if (!isBlock) {
               return (
                 <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
                   {children}
                 </code>
               )
             }
-            
+
             return (
               <SyntaxHighlighter
-                style={oneDark}
+                style={darkMode ? oneDark : oneLight}
                 language={match?.[1] || 'text'}
                 PreTag="div"
                 className="rounded-lg !my-3"
+                customStyle={{ margin: 0 }}
               >
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>
@@ -231,18 +244,24 @@ export function MarkdownPreview({
           // Links with navigation handling
           a({ href, children, ...props }) {
             const isExternal = href?.startsWith('http://') || href?.startsWith('https://')
-            
+
             return (
-              <a
-                href={href}
-                onClick={(e) => handleLinkClick(href || '', e)}
-                target={isExternal ? '_blank' : undefined}
-                rel={isExternal ? 'noopener noreferrer' : undefined}
-                className="text-blue-600 dark:text-blue-400 hover:underline"
+              <span
+                role="link"
+                className="text-blue-600 dark:text-blue-400 hover:underline cursor-text"
+                title={`Ctrl+click to follow${href ? ': ' + href : ''}`}
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey) {
+                    handleLinkClick(href || '', e)
+                    if (isExternal) {
+                      window.open(href!, '_blank', 'noopener,noreferrer')
+                    }
+                  }
+                }}
                 {...props}
               >
                 {children}
-              </a>
+              </span>
             )
           },
           
@@ -337,7 +356,7 @@ export function MarkdownPreview({
       </ReactMarkdown>
     </div>
   )
-}
+})
 
 // Generate URL-friendly ID from heading content
 function generateHeadingId(children: React.ReactNode): string {
