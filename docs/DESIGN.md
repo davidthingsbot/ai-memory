@@ -64,34 +64,48 @@ This document describes a complete UI redesign of ai-memory from a vertical "cap
 
 The repository IS the interface. Users should feel like they're inside their repo, not using a tool that connects to it.
 
-### Three-Panel Architecture
+### Three-Tab Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  ⚙️ Setup Drawer (collapsed by default after first run)            │
-├────────────────────────────────────────────────────────┬────────────┤
-│                                                        │            │
-│                   BROWSER PANEL                        │   COMMIT   │
-│                   (main workspace)                     │   PANEL    │
-│  ┌────────────────────────────────────────────────┐   │            │
-│  │ 📁 Directory Listing                           │   │  Staged:   │
-│  │ ├── 📁 docs/                                   │   │  - foo.md  │
-│  │ │   ├── 📄 api.md                             │   │  - bar.md  │
-│  │ │   └── 📄 guide.md                           │   │            │
-│  │ ├── 📁 src/                                    │   │  [Commit]  │
-│  │ └── 📄 README.md                   [🎤 Voice] │   │            │
-│  ├────────────────────────────────────────────────┤   │            │
-│  │ 📄 File Preview                    [📝][👁️]   │   │            │
-│  │                                                │   │            │
-│  │ # README                                       │   │            │
-│  │                                                │   │            │
-│  │ This is the project documentation...          │   │            │
-│  │                                                │   │            │
-│  │ [+ Insert Section] [✏️ Modify] [🖼️ Add Image] │   │            │
-│  └────────────────────────────────────────────────┘   │            │
-│                                                        │            │
-└────────────────────────────────────────────────────────┴────────────┘
+│  ⚙️ Setup (gear icon)              🎤 Ambient Voice (always on)    │
+├─────────────────────────────────────────────────────────────────────┤
+│  [ 📁 Browser ]    [ 📝 Editor ]    [ 📤 Commit (2) ]              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│                        ACTIVE TAB CONTENT                           │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                                                             │   │
+│  │   (Browser, Editor, or Commit content here)                 │   │
+│  │                                                             │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 
+BROWSER TAB                    EDITOR TAB                 COMMIT TAB
+┌─────────────────────┐       ┌─────────────────────┐    ┌─────────────────────┐
+│ 📁 Directory        │       │ [Preview][Edit][Raw]│    │ Staged Changes (2)  │
+│ ├── docs/           │       ├─────────────────────┤    ├─────────────────────┤
+│ │   └── api.md      │       │                     │    │ ✓ docs/api.md       │
+│ ├── src/            │       │  # Document Title   │    │   +15 -3 lines      │
+│ └── README.md       │       │                     │    │ ✓ src/utils.ts      │
+├─────────────────────┤       │  Content here...    │    │   +8 -0 lines       │
+│ 📄 File Preview     │       │                     │    ├─────────────────────┤
+│                     │       │  [+ Insert] [✏️]    │    │ Commit message:     │
+│ # README            │       │                     │    │ [________________]  │
+│ This project...     │       │                     │    │                     │
+│                     │       │                     │    │ [Commit] [Push]     │
+└─────────────────────┘       └─────────────────────┘    └─────────────────────┘
+
+Voice scope per tab:           Voice scope per tab:       Voice scope per tab:
+- navigate, open, search       - insert, modify, format   - stage, unstage, commit
+- new file, new folder         - save, undo, redo         - push, discard
+- "go to editor"               - "go to commit"           - "go to browser"
+```
+
+**Prompt Modal** (overlay, triggered by AI operations):
+```
                     ┌─────────────────────┐
                     │    PROMPT MODAL     │
                     │ (triggered by ops)  │
@@ -228,16 +242,17 @@ interface SetupDrawerProps {
 
 ---
 
-### 3. Commit Panel
+### 3. Commit Tab
 
 **Purpose:** Stage, review, and push changes.
 
 **Behavior:**
-- Shows when there are pending changes
-- Can be slide-in from right or always visible on wide screens
+- One of three main tabs (Browser | Editor | Commit)
+- Badge shows pending change count when not active
 - Displays diffs in unified format
 - Auto-generated commit message (editable)
 - Push button
+- Voice commands: "stage all", "commit", "push", etc.
 
 **Wire-frame:**
 ```
@@ -754,8 +769,9 @@ npm install zustand shiki mermaid @monaco-editor/react react-diff-viewer-continu
 ### UX Decisions (Confirmed 2026-03-28)
 
 1. **Commit panel visibility:**
-   - ✅ **Decision: Slide-in when changes exist**
-   - Keeps browser uncluttered until you've made changes
+   - ✅ **Decision: Tab (not slide-in)**
+   - Three equal tabs: Browser | Editor | Commit
+   - All navigation via tabs — no slide-outs or drawers for main panels
 
 2. **Edit mode:**
    - ✅ **Decision: Three modes — Preview, Rich Edit, Raw Edit**
