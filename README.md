@@ -218,3 +218,18 @@ This is a working prototype. Current state:
 Note-taking apps trap your data. AI assistants keep your conversations on their servers. This experiment asks: what if you could have AI assistance while keeping full ownership?
 
 Your memories live in *your* GitHub repo. Plain markdown. Version-controlled forever. The AI helps you write — but the words belong to you.
+
+---
+
+## Design: v2 Redesign (Planned)
+
+The current UI is a vertical "capsule" flow. A major redesign is planned to make the interface **repository-centric** — putting the repo browser front-and-center as the primary workspace.
+
+**Key changes:**
+- **Setup Drawer:** API keys and config collapse after first run
+- **Browser Panel:** Main workspace with dense directory listing + file preview
+- **Commit Panel:** Stage, diff, and push changes (GitHub Desktop style)
+- **Prompt Modal:** Two-stage AI flow (describe intent → review plan → execute)
+- **Voice Navigation:** Speak commands to navigate ("open src folder", "show README")
+
+See [docs/DESIGN.md](./docs/DESIGN.md) for the complete design specification.
