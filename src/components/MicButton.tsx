@@ -59,17 +59,15 @@ export function MicButton({
     }
   }, [recording, onRecordingChange])
 
-  // Red colors: idle = muted red, recording = bright red
   const baseClasses = 'transition-all duration-150'
   const colorClasses = recording
-    ? 'bg-red-600 hover:bg-red-700 text-white border-red-600 shadow-lg shadow-red-500/30'
-    : 'bg-red-100 hover:bg-red-200 text-red-600 border-red-200 dark:bg-red-950 dark:hover:bg-red-900 dark:text-red-400 dark:border-red-800'
+    ? 'bg-red-600 hover:bg-red-700 text-white border-red-600'
+    : 'bg-muted hover:bg-muted/80 text-muted-foreground border-border'
 
-  // Status text
-  const statusText = transcribing 
-    ? 'Transcribing...' 
-    : recording 
-      ? 'Recording... tap to stop' 
+  const statusText = transcribing
+    ? 'Transcribing...'
+    : recording
+      ? 'Recording... tap to stop'
       : null
 
   return (
@@ -77,22 +75,23 @@ export function MicButton({
       <Button
         variant="outline"
         size={size}
-        disabled={disabled || transcribing}
+        disabled={disabled}
         onClick={handleClick}
         onMouseDown={(e) => { e.preventDefault(); handleMouseDown() }}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onTouchStart={(e) => { e.preventDefault(); handleMouseDown(); handleClick() }}
         onTouchEnd={(e) => { e.preventDefault(); handleMouseUp() }}
-        className={`${baseClasses} ${colorClasses} ${recording ? 'animate-pulse' : ''} ${className}`}
+        className={`${baseClasses} ${colorClasses} ${className}`}
         title="Tap to start/stop or hold to record"
         tabIndex={-1}
       >
-        {transcribing ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
+        <span className="relative flex items-center justify-center">
           <Mic className="h-4 w-4" />
-        )}
+          {transcribing && (
+            <span className="absolute inset-[-4px] rounded-full border-2 border-muted-foreground border-t-transparent animate-spin" />
+          )}
+        </span>
       </Button>
       {showStatus && statusText && (
         <span className="text-xs text-muted-foreground animate-pulse">

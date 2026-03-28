@@ -56,7 +56,7 @@ export function createTranscriptionSession(
   const connect = async () => {
     try {
       // Create WebSocket connection
-      const url = `${REALTIME_URL}?model=gpt-4o-realtime-preview`
+      const url = `${REALTIME_URL}?model=gpt-4o-transcribe`
       ws = new WebSocket(url, [
         'realtime',
         `openai-insecure-api-key.${apiKey}`,
@@ -65,28 +65,19 @@ export function createTranscriptionSession(
       ws.onopen = async () => {
         connected = true
 
-        // Configure session for transcription
+        // Configure session for transcription only
         ws?.send(JSON.stringify({
           type: 'session.update',
           session: {
-            type: 'realtime',
-            instructions: 'Transcribe speech only. Do not respond.',
-            tools: [],
-            audio: {
-              input: {
-                format: { type: 'audio/pcm', rate: 24000 },
-                transcription: { model: 'whisper-1' },
-                turn_detection: {
-                  type: 'server_vad',
-                  threshold: 0.5,
-                  prefix_padding_ms: 300,
-                  silence_duration_ms: 500,
-                },
-              },
-              output: {
-                format: { type: 'audio/pcm', rate: 24000 },
-                voice: 'alloy',
-              },
+            input_audio_format: 'pcm16',
+            input_audio_transcription: {
+              model: 'gpt-4o-transcribe',
+            },
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500,
             },
           },
         }))
@@ -144,18 +135,21 @@ export function createTranscriptionSession(
             callbacks.onSpeechStopped?.()
             break
 
-          // Streaming transcript delta
+          // Streaming transcript delta (both old and new event names)
           case 'conversation.item.input_audio_transcription.delta':
+          case 'response.audio_transcript.delta':
             transcriptAcc += data.delta || ''
             callbacks.onTranscriptDelta?.(data.delta || '')
             break
 
-          // Final transcript
+          // Final transcript (both old and new event names)
           case 'conversation.item.input_audio_transcription.completed':
+          case 'response.audio_transcript.done': {
             const finalText = data.transcript || transcriptAcc
             transcriptAcc = ''
             callbacks.onTranscriptComplete?.(finalText)
             break
+          }
 
           case 'error':
             console.error('[realtime-transcription] error:', data.error)
