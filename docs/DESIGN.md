@@ -345,6 +345,120 @@ interface SetupDrawerProps {
 
 ---
 
+## Ambient Voice Interface (Novel Feature)
+
+### Concept: Always-On, Context-Aware Voice
+
+This is a significant architectural addition: an **ambient voice interface** using a real-time voice API (OpenAI Realtime API or similar). The voice agent is always listening, and its available tools/commands change based on UI focus.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     AMBIENT VOICE LAYER                         │
+│                   (always listening, context-aware)             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐        │
+│   │   BROWSER   │    │   EDITOR    │    │   COMMIT    │        │
+│   │    TAB      │    │    TAB      │    │    TAB      │        │
+│   ├─────────────┤    ├─────────────┤    ├─────────────┤        │
+│   │ Tools:      │    │ Tools:      │    │ Tools:      │        │
+│   │ - navigate  │    │ - insert    │    │ - stage     │        │
+│   │ - open file │    │ - modify    │    │ - unstage   │        │
+│   │ - search    │    │ - delete    │    │ - commit    │        │
+│   │ - new file  │    │ - format    │    │ - push      │        │
+│   │ - new folder│    │ - undo/redo │    │ - discard   │        │
+│   └─────────────┘    └─────────────┘    └─────────────┘        │
+│                                                                 │
+│   Current focus → determines which tools are active             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Tab-Based Navigation (Revised)
+
+The ambient voice interface argues for **tabs rather than slide-out panels**. Each tab represents a distinct "voice scope":
+
+1. **Browser Tab** — Navigate, browse, select files, trigger operations
+2. **Editor Tab** — Edit content, invoke AI operations, preview changes  
+3. **Commit Tab** — Review staged changes, write commit message, push
+
+User switches tabs explicitly (click or voice: "go to commit"). The voice agent's tool set updates automatically.
+
+### Real-Time API Integration
+
+**Technology:** OpenAI Realtime API (or alternative)
+- WebSocket connection maintained while app is open
+- Audio streamed continuously (with VAD — voice activity detection)
+- Low latency responses (~200-500ms)
+- Function calling for tool invocation
+
+**Architecture:**
+```tsx
+// Ambient voice context
+interface VoiceContext {
+  activeTab: 'browser' | 'editor' | 'commit'
+  availableTools: Tool[]
+  currentFile?: string
+  currentSelection?: Selection
+}
+
+// Tool definitions change based on context
+const browserTools = [
+  { name: 'navigate', params: { path: 'string' } },
+  { name: 'open_file', params: { filename: 'string' } },
+  { name: 'search', params: { query: 'string' } },
+  { name: 'new_file', params: { name: 'string', directory: 'string' } },
+  { name: 'switch_tab', params: { tab: 'editor' | 'commit' } },
+]
+
+const editorTools = [
+  { name: 'insert_at_cursor', params: { content: 'string' } },
+  { name: 'invoke_ai', params: { operation: 'insert' | 'modify', intent: 'string' } },
+  { name: 'toggle_mode', params: { mode: 'preview' | 'edit' | 'raw' } },
+  { name: 'save', params: {} },
+  { name: 'switch_tab', params: { tab: 'browser' | 'commit' } },
+]
+
+const commitTools = [
+  { name: 'stage_file', params: { path: 'string' } },
+  { name: 'unstage_file', params: { path: 'string' } },
+  { name: 'set_commit_message', params: { message: 'string' } },
+  { name: 'commit', params: {} },
+  { name: 'push', params: {} },
+  { name: 'switch_tab', params: { tab: 'browser' | 'editor' } },
+]
+```
+
+### Visual Feedback
+
+- **Listening indicator:** Subtle pulse/glow when voice is active
+- **Transcription overlay:** Shows what was heard (fades after action)
+- **Tool invocation:** Brief toast showing "Navigating to src/..." or similar
+- **Error handling:** Voice feedback for ambiguous commands
+
+### Local Voice Options (Future)
+
+Explore local/on-device voice processing:
+- **Whisper.cpp / whisper-web** — Local transcription in browser (WASM)
+- **Transformers.js** — Run small speech models client-side
+- **WebRTC VAD** — Local voice activity detection to reduce API calls
+
+Benefits: Privacy, reduced latency, lower costs
+Tradeoffs: Larger bundle, device capability requirements
+
+### Wake Word vs Always-On
+
+Options:
+1. **Always-on** — Continuous listening (higher API cost, more seamless)
+2. **Wake word** — "Hey Memory" activates listening (lower cost, slight friction)
+3. **Push-to-talk** — Hold button to speak (lowest cost, most friction)
+
+**Recommendation:** Start with push-to-talk toggle (existing pattern), add always-on as premium feature or when using local voice.
+
+---
+
 ## Multi-Format Support
 
 ### Markdown
@@ -613,58 +727,80 @@ npm install zustand shiki mermaid @monaco-editor/react react-diff-viewer-continu
 
 ### Phase 4: Voice Navigation (Week 4)
 
-1. Voice command parser
-2. Navigation actions
-3. Visual feedback
+1. Voice command parser (regex-based initially)
+2. Navigation actions per tab context
+3. Visual feedback (listening indicator, transcription overlay)
 
-### Phase 5: Polish (Week 5)
+### Phase 5: Ambient Voice Interface (Week 5-6)
+
+1. OpenAI Realtime API integration
+2. Context-aware tool switching based on active tab
+3. WebSocket connection management
+4. Voice activity detection (VAD)
+5. Push-to-talk toggle → always-on option
+
+### Phase 6: Polish (Week 7)
 
 1. Responsive design
 2. Keyboard shortcuts
 3. Performance optimization
 4. Error handling
+5. Local voice exploration (whisper-web)
 
 ---
 
-## Open Questions / Decisions Needed
+## Decisions Made
 
-### UX Decisions
+### UX Decisions (Confirmed 2026-03-28)
 
 1. **Commit panel visibility:**
-   - Always visible (GitHub Desktop style)?
-   - Slide-in when changes exist?
-   - Route to separate page?
+   - ✅ **Decision: Slide-in when changes exist**
+   - Keeps browser uncluttered until you've made changes
 
 2. **Edit mode:**
-   - Inline in preview (WYSIWYG-ish)?
-   - Dedicated editor panel?
-   - Replace preview entirely?
+   - ✅ **Decision: Three modes — Preview, Rich Edit, Raw Edit**
+   - Toggle between rendered preview, WYSIWYG-ish editing, and raw markdown
+   - Replace preview area when editing (not side-by-side)
 
-3. **Multi-file operations:**
+3. **Navigation model:**
+   - ✅ **Decision: Tab-based navigation**
+   - Three tabs: Browser, Editor, Commit
+   - Tabs provide natural "voice scope" for ambient voice interface
+   - Each tab = different set of voice commands available
+
+4. **Editor weight:**
+   - ✅ **Decision: Use Monaco (heavier is fine)**
+   - Full-featured editing experience is worth the bundle size
+
+### Technical Decisions (Confirmed 2026-03-28)
+
+1. **Voice interface:**
+   - ✅ **Decision: Ambient voice via real-time API**
+   - Always-on voice using OpenAI Realtime API (or similar)
+   - Context-aware: tab focus determines available tools
+   - Start with push-to-talk, add always-on as iteration
+
+2. **Local voice (exploration):**
+   - ✅ **Decision: Explore local options**
+   - Whisper.cpp/whisper-web for on-device transcription
+   - Benefits: privacy, lower latency, reduced API costs
+   - Not blocking for v2, but prioritized for future
+
+### Open Questions (Remaining)
+
+1. **Multi-file operations:**
    - Generate content for multiple files at once?
    - Batch commits or one at a time?
+   - *Leaning:* Start single-file, add multi-file later
 
-4. **Keyboard shortcuts:**
+2. **Keyboard shortcuts:**
    - `Cmd+K` for command palette?
    - `Cmd+S` to stage?
    - Vim-style navigation?
 
-### Technical Decisions
-
-1. **Monaco vs lightweight:**
-   - Monaco is ~5MB bundle
-   - Could use CodeMirror 6 (lighter) or simple textarea
-   - Decision: Start with textarea + syntax display, add Monaco later
-
-2. **State management:**
-   - Zustand is recommended but adds dependency
-   - Could stick with Context for now
-   - Decision: Start with Context, migrate to Zustand if complex
-
-3. **Voice command parsing:**
-   - Simple regex matching?
-   - Small LLM call for NLU?
-   - Decision: Start with regex, upgrade if needed
+3. **State management:**
+   - Zustand vs Context
+   - *Leaning:* Start with Context, migrate if complex
 
 ---
 
