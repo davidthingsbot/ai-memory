@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { listDirectory, readFile, searchRepo, type DirectoryEntry, type SearchResult } from '@/lib/github-tools'
 import { MarkdownPreview } from '@/components/MarkdownPreview'
 import { MicButton } from '@/components/MicButton'
+import { BlinkingCursor } from '@/components/BlinkingCursor'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
@@ -453,7 +454,12 @@ export function RepositoryTab() {
             </div>
             
             {/* File content */}
-            <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 flex flex-col relative">
+              {/* Blinking cursor for preview/raw modes */}
+              {viewMode !== 'edit' && (
+                <BlinkingCursor visible={hasCursor} />
+              )}
+              
               {viewMode === 'preview' && isMarkdown && fileContent ? (
                 <div 
                   className="p-4 overflow-auto flex-1"
