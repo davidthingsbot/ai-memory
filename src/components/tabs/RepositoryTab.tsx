@@ -276,6 +276,7 @@ export function RepositoryTab() {
 
   // Remember last-viewed file per directory
   const dirFileHistory = useRef<Map<string, string>>(new Map())
+  const suppressAutoSelect = useRef(false)
   
   // Cursor/selection as raw-text offsets — shared across view modes
   const [cursorOffset, setCursorOffset] = useState<number | null>(null)
@@ -341,6 +342,7 @@ export function RepositoryTab() {
   // 3. File matching directory name (e.g. docs/ → docs.md)
   // 4. First file in the listing
   useEffect(() => {
+    if (suppressAutoSelect.current) { suppressAutoSelect.current = false; return }
     if (selectedFile || entries.length === 0) return
     const files = entries.filter(e => e.type === 'file')
     if (files.length === 0) return
@@ -395,14 +397,20 @@ export function RepositoryTab() {
     if (selectedFile) {
       dirFileHistory.current.set(currentPath, selectedFile)
     }
-    setCurrentPath(path)
     clearSelectedFile()
-    setEntries([])
     setEditorDirty(false)
     setOriginalContent(null)
     setImageDataUrl(null)
     setCursorOffset(null)
     setSelectionRange(null)
+    if (path !== currentPath) {
+      // Navigating to a different directory
+      setEntries([])
+      setCurrentPath(path)
+    } else {
+      // Clicking current directory — suppress auto-select so file stays deselected
+      suppressAutoSelect.current = true
+    }
   }, [setCurrentPath, clearSelectedFile, editorDirty, selectedFile, currentPath])
   
   // Select file
