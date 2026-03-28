@@ -98,6 +98,8 @@ export function RepositoryTab() {
         handleSelectFile(readme.path)
       }
     }
+    // Note: intentionally not including handleSelectFile to avoid re-triggering
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, selectedFile])
   
   // Handle search
