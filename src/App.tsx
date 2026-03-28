@@ -9,7 +9,7 @@ function App() {
   const { activeTab } = useAppStore()
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Header */}
       <header className="border-b px-6 py-4">
         <div className="flex items-center justify-between">
@@ -26,7 +26,7 @@ function App() {
       <TabNavigation />
 
       {/* Main content area */}
-      <main className="flex-1 overflow-hidden h-0">
+      <main className="flex-1 min-h-0 overflow-hidden">
         {activeTab === 'setup' && <SetupTab />}
         {activeTab === 'repository' && <RepositoryTab />}
         {activeTab === 'commit' && <CommitTab />}
