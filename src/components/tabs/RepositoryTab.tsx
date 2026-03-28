@@ -6,7 +6,8 @@ import { listDirectory, readFile, searchRepo, type DirectoryEntry, type SearchRe
 import { MarkdownPreview } from '@/components/MarkdownPreview'
 import { MicButton } from '@/components/MicButton'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
-import Editor from '@monaco-editor/react'
+import Editor, { type OnMount } from '@monaco-editor/react'
+import type { editor as monacoEditor } from 'monaco-editor'
 import { 
   FolderOpen, FileText, ChevronRight, Home,
   Loader2, Eye, Code, Edit3, Search, X,
@@ -55,6 +56,10 @@ export function RepositoryTab() {
   // Editor dirty state
   const [editorDirty, setEditorDirty] = useState(false)
   const [originalContent, setOriginalContent] = useState<string | null>(null)
+  
+  // Text selection state for Modify button
+  const [hasSelection, setHasSelection] = useState(false)
+  const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null)
   
   // Voice transcription for search
   const searchTranscription = useRealtimeTranscription({
@@ -167,6 +172,28 @@ export function RepositoryTab() {
       setEditorDirty(value !== originalContent)
     }
   }, [setFileContent, originalContent])
+  
+  // Handle Monaco editor mount - track selection
+  const handleEditorMount: OnMount = useCallback((editor) => {
+    editorRef.current = editor
+    editor.onDidChangeCursorSelection((e) => {
+      const selection = editor.getSelection()
+      const hasText = selection ? !selection.isEmpty() : false
+      setHasSelection(hasText)
+    })
+  }, [])
+  
+  // Track selection in preview mode
+  const handlePreviewMouseUp = useCallback(() => {
+    const selection = window.getSelection()
+    const hasText = selection ? selection.toString().trim().length > 0 : false
+    setHasSelection(hasText)
+  }, [])
+  
+  // Reset selection state when switching view modes
+  useEffect(() => {
+    setHasSelection(false)
+  }, [viewMode])
   
   // Check if file is markdown
   const isMarkdown = selectedFile?.endsWith('.md') || selectedFile?.endsWith('.mdx')
@@ -330,9 +357,39 @@ export function RepositoryTab() {
         {selectedFile ? (
           <>
             {/* File header */}
-            <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
-              <code className="text-xs truncate flex-1">{selectedFile}</code>
-              <div className="flex gap-1 ml-2">
+            <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30 gap-2">
+              <code className="text-xs truncate">{selectedFile}</code>
+              
+              {/* Action buttons - now in header */}
+              <div className="flex gap-1 items-center">
+                {editorDirty && (
+                  <Button variant="default" size="sm" onClick={handleSave} className="gap-1 h-7">
+                    <Save className="h-3.5 w-3.5" />
+                    Stage
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={handleInsert} className="gap-1 h-7">
+                  <Plus className="h-3.5 w-3.5" />
+                  Insert
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleModify} 
+                  className="gap-1 h-7"
+                  disabled={!hasSelection}
+                  title={hasSelection ? "Modify selected text" : "Select text first to modify"}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Modify
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleAddImage} className="gap-1 h-7">
+                  <Image className="h-3.5 w-3.5" />
+                  Image
+                </Button>
+              </div>
+              
+              <div className="flex gap-1 items-center">
                 {/* View mode toggle */}
                 <div className="flex rounded-md border overflow-hidden">
                   <Button
@@ -366,15 +423,18 @@ export function RepositoryTab() {
                 </div>
                 
                 {editorDirty && (
-                  <span className="text-xs text-amber-600 self-center ml-2">Modified</span>
+                  <span className="text-xs text-amber-600 ml-1">Modified</span>
                 )}
               </div>
             </div>
             
             {/* File content */}
-            <div className="flex-1 overflow-auto min-h-0">
+            <div className="flex-1 min-h-0 flex flex-col">
               {viewMode === 'preview' && isMarkdown && fileContent ? (
-                <div className="p-4">
+                <div 
+                  className="p-4 overflow-auto flex-1"
+                  onMouseUp={handlePreviewMouseUp}
+                >
                   <MarkdownPreview 
                     content={fileContent}
                     basePath={basePath}
@@ -382,48 +442,31 @@ export function RepositoryTab() {
                   />
                 </div>
               ) : viewMode === 'edit' ? (
-                <Editor
-                  height="100%"
-                  language={selectedFile.endsWith('.md') ? 'markdown' : selectedFile.endsWith('.ts') || selectedFile.endsWith('.tsx') ? 'typescript' : 'plaintext'}
-                  value={fileContent || ''}
-                  onChange={handleEditorChange}
-                  theme="vs-dark"
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 13,
-                    lineNumbers: 'on',
-                    wordWrap: 'on',
-                    scrollBeyondLastLine: false,
-                  }}
-                />
+                <div className="flex-1 min-h-0">
+                  <Editor
+                    height="100%"
+                    language={selectedFile.endsWith('.md') ? 'markdown' : selectedFile.endsWith('.ts') || selectedFile.endsWith('.tsx') ? 'typescript' : 'plaintext'}
+                    value={fileContent || ''}
+                    onChange={handleEditorChange}
+                    onMount={handleEditorMount}
+                    theme="vs-dark"
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 13,
+                      lineNumbers: 'on',
+                      wordWrap: 'on',
+                      scrollBeyondLastLine: false,
+                    }}
+                  />
+                </div>
               ) : (
-                <pre className="p-4 text-xs font-mono whitespace-pre-wrap overflow-auto">
+                <pre className="p-4 text-xs font-mono whitespace-pre-wrap overflow-auto flex-1">
                   {fileContent}
                 </pre>
               )}
             </div>
             
-            {/* Operations toolbar */}
-            <div className="border-t px-4 py-2 bg-muted/30 flex gap-2 flex-wrap">
-              {editorDirty && (
-                <Button variant="default" size="sm" onClick={handleSave} className="gap-1">
-                  <Save className="h-3.5 w-3.5" />
-                  Stage Changes
-                </Button>
-              )}
-              <Button variant="outline" size="sm" onClick={handleInsert} className="gap-1">
-                <Plus className="h-3.5 w-3.5" />
-                Insert Section
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleModify} className="gap-1">
-                <Pencil className="h-3.5 w-3.5" />
-                Modify
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleAddImage} className="gap-1">
-                <Image className="h-3.5 w-3.5" />
-                Add Image
-              </Button>
-            </div>
+
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">

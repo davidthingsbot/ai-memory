@@ -26,7 +26,7 @@ function App() {
       <TabNavigation />
 
       {/* Main content area */}
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden h-0">
         {activeTab === 'setup' && <SetupTab />}
         {activeTab === 'repository' && <RepositoryTab />}
         {activeTab === 'commit' && <CommitTab />}
