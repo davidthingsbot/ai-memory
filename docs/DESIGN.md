@@ -68,40 +68,39 @@ The repository IS the interface. Users should feel like they're inside their rep
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  ⚙️ Setup (gear icon)              🎤 Ambient Voice (always on)    │
+│                                        🎤 Ambient Voice (always on) │
 ├─────────────────────────────────────────────────────────────────────┤
-│  [ 📁 Browser ]    [ 📝 Editor ]    [ 📤 Commit (2) ]              │
+│  [ ⚙️ Setup ]        [ 📁 Repository ]        [ 📤 Commit (2) ]    │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │                        ACTIVE TAB CONTENT                           │
 │                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                                                             │   │
-│  │   (Browser, Editor, or Commit content here)                 │   │
-│  │                                                             │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 
-BROWSER TAB                    EDITOR TAB                 COMMIT TAB
+SETUP TAB                      REPOSITORY TAB              COMMIT TAB
 ┌─────────────────────┐       ┌─────────────────────┐    ┌─────────────────────┐
-│ 📁 Directory        │       │ [Preview][Edit][Raw]│    │ Staged Changes (2)  │
-│ ├── docs/           │       ├─────────────────────┤    ├─────────────────────┤
-│ │   └── api.md      │       │                     │    │ ✓ docs/api.md       │
-│ ├── src/            │       │  # Document Title   │    │   +15 -3 lines      │
-│ └── README.md       │       │                     │    │ ✓ src/utils.ts      │
-├─────────────────────┤       │  Content here...    │    │   +8 -0 lines       │
-│ 📄 File Preview     │       │                     │    ├─────────────────────┤
-│                     │       │  [+ Insert] [✏️]    │    │ Commit message:     │
-│ # README            │       │                     │    │ [________________]  │
-│ This project...     │       │                     │    │                     │
-│                     │       │                     │    │ [Commit] [Push]     │
+│ OpenAI API Key      │       │ 📁 Directory        │    │ Staged Changes (2)  │
+│ [••••••••••••] ✓   │       │ docs/ src/ README   │    ├─────────────────────┤
+│                     │       ├─────────────────────┤    │ ✓ docs/api.md       │
+│ GitHub PAT          │       │ [Preview][Edit][Raw]│    │   +15 -3 lines      │
+│ [••••••••••••] ✓   │       ├─────────────────────┤    │ ✓ src/utils.ts      │
+│                     │       │                     │    │   +8 -0 lines       │
+│ Brave Search (opt)  │       │ # README            │    ├─────────────────────┤
+│ [______________]    │       │                     │    │ Commit message:     │
+│                     │       │ Content here...     │    │ [________________]  │
+│ Repository          │       │                     │    │                     │
+│ [v my-repo     ▾]   │       │ [+Insert][✏️][🖼️]  │    │ [Commit] [Push]     │
+│                     │       │                     │    │                     │
+│ Model               │       │                     │    │                     │
+│ [v GPT-5.2     ▾]   │       │                     │    │                     │
 └─────────────────────┘       └─────────────────────┘    └─────────────────────┘
 
 Voice scope per tab:           Voice scope per tab:       Voice scope per tab:
-- navigate, open, search       - insert, modify, format   - stage, unstage, commit
-- new file, new folder         - save, undo, redo         - push, discard
-- "go to editor"               - "go to commit"           - "go to browser"
+- (minimal - config only)      - navigate, open, search   - stage, unstage, commit
+                               - new file, new folder     - push, discard
+                               - insert, modify, format   - "go to repository"
+                               - save, toggle edit mode
+                               - "go to commit"
 ```
 
 **Prompt Modal** (overlay, triggered by AI operations):
@@ -395,8 +394,8 @@ This is a significant architectural addition: an **ambient voice interface** usi
 
 The ambient voice interface argues for **tabs rather than slide-out panels**. Each tab represents a distinct "voice scope":
 
-1. **Browser Tab** — Navigate, browse, select files, trigger operations
-2. **Editor Tab** — Edit content, invoke AI operations, preview changes  
+1. **Setup Tab** — Configure API keys, select repository, choose model (minimal voice scope)
+2. **Repository Tab** — Browse files, preview/edit content, invoke AI operations (main workspace, richest voice scope)
 3. **Commit Tab** — Review staged changes, write commit message, push
 
 User switches tabs explicitly (click or voice: "go to commit"). The voice agent's tool set updates automatically.
@@ -780,9 +779,11 @@ npm install zustand shiki mermaid @monaco-editor/react react-diff-viewer-continu
 
 3. **Navigation model:**
    - ✅ **Decision: Tab-based navigation**
-   - Three tabs: Browser, Editor, Commit
+   - Three tabs: **Setup | Repository | Commit**
+   - Setup: API keys, repo selection, model (one-time config, then move on)
+   - Repository: Directory listing + file preview/edit (main workspace, combined)
+   - Commit: Staged changes, diffs, push
    - Tabs provide natural "voice scope" for ambient voice interface
-   - Each tab = different set of voice commands available
 
 4. **Editor weight:**
    - ✅ **Decision: Use Monaco (heavier is fine)**
