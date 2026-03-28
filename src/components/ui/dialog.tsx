@@ -41,10 +41,20 @@ export function DialogContent({ className, children }: DialogContentProps) {
   )
 }
 
-export function DialogHeader({ children }: { children: React.ReactNode }) {
-  return <div className="mb-4">{children}</div>
+interface DialogHeaderProps {
+  children: React.ReactNode
+  className?: string
 }
 
-export function DialogTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-lg font-semibold">{children}</h2>
+export function DialogHeader({ children, className }: DialogHeaderProps) {
+  return <div className={cn("mb-4", className)}>{children}</div>
+}
+
+interface DialogTitleProps {
+  children: React.ReactNode
+  className?: string
+}
+
+export function DialogTitle({ children, className }: DialogTitleProps) {
+  return <h2 className={cn("text-lg font-semibold", className)}>{children}</h2>
 }

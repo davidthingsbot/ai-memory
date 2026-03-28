@@ -1,0 +1,383 @@
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { useAppStore } from '@/store'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { listDirectory, readFile, searchRepo, type DirectoryEntry, type SearchResult } from '@/lib/github-tools'
+import { MarkdownPreview } from '@/components/MarkdownPreview'
+import { MicButton } from '@/components/MicButton'
+import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
+import Editor from '@monaco-editor/react'
+import { 
+  FolderOpen, FileText, ChevronRight, Home,
+  Loader2, Eye, Code, Edit3, Search, X,
+  Plus, Pencil, Image
+} from 'lucide-react'
+
+export function RepositoryTab() {
+  const { 
+    selectedRepoFullName,
+    currentPath, setCurrentPath,
+    selectedFile, fileContent, selectFile, clearSelectedFile, setFileContent,
+    viewMode, setViewMode,
+    openPromptModal,
+  } = useAppStore()
+  
+  // Directory state
+  const [entries, setEntries] = useState<DirectoryEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchBaseTextRef = useRef<string>('')
+  
+  // Editor dirty state
+  const [editorDirty, setEditorDirty] = useState(false)
+  const [originalContent, setOriginalContent] = useState<string | null>(null)
+  
+  // Voice transcription for search
+  const searchTranscription = useRealtimeTranscription({
+    onTranscriptInsert: (newText, insertPos) => {
+      const base = searchBaseTextRef.current
+      const before = base.slice(0, insertPos)
+      const after = base.slice(insertPos)
+      setSearchQuery(before + newText + after)
+    },
+  })
+  
+  // Load directory
+  const loadDirectory = useCallback(async (path: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const results = await listDirectory(path)
+      // Sort: folders first, then alphabetically
+      results.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
+      setEntries(results)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load directory')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+  
+  // Initial load and path changes
+  useEffect(() => {
+    loadDirectory(currentPath)
+  }, [currentPath, loadDirectory])
+  
+  // Load README.md on initial mount if no file selected
+  useEffect(() => {
+    if (!selectedFile && entries.length > 0) {
+      const readme = entries.find(e => e.name.toLowerCase() === 'readme.md')
+      if (readme) {
+        handleSelectFile(readme.path)
+      }
+    }
+  }, [entries, selectedFile])
+  
+  // Handle search
+  const handleSearch = useCallback(async () => {
+    if (!searchQuery.trim()) return
+    setIsSearching(true)
+    try {
+      const results = await searchRepo(searchQuery.trim())
+      setSearchResults(results)
+    } catch {
+      setSearchResults([])
+    }
+    setIsSearching(false)
+  }, [searchQuery])
+  
+  // Navigate to directory
+  const handleNavigateDir = useCallback((path: string) => {
+    setCurrentPath(path)
+    clearSelectedFile()
+  }, [setCurrentPath, clearSelectedFile])
+  
+  // Select file
+  const handleSelectFile = useCallback(async (path: string) => {
+    try {
+      const file = await readFile(path)
+      if (file) {
+        selectFile(path, file.content)
+        setOriginalContent(file.content)
+        setEditorDirty(false)
+      }
+    } catch (err) {
+      setError('Failed to load file')
+    }
+  }, [selectFile])
+  
+  // Breadcrumb navigation
+  const pathSegments = currentPath ? currentPath.split('/') : []
+  
+  // Build breadcrumb items
+  const breadcrumbs = [
+    { label: selectedRepoFullName?.split('/')[1] || 'root', path: '' },
+    ...pathSegments.map((segment, i) => ({
+      label: segment,
+      path: pathSegments.slice(0, i + 1).join('/')
+    }))
+  ]
+  
+  // Handle editor content change
+  const handleEditorChange = useCallback((value: string | undefined) => {
+    if (value !== undefined) {
+      setFileContent(value)
+      setEditorDirty(value !== originalContent)
+    }
+  }, [setFileContent, originalContent])
+  
+  // Check if file is markdown
+  const isMarkdown = selectedFile?.endsWith('.md') || selectedFile?.endsWith('.mdx')
+  
+  // Get base path for resolving relative links
+  const basePath = selectedFile ? selectedFile.split('/').slice(0, -1).join('/') : ''
+  
+  // Handle operations
+  const handleInsert = useCallback(() => {
+    if (selectedFile) {
+      openPromptModal({ type: 'insert', path: selectedFile })
+    }
+  }, [selectedFile, openPromptModal])
+  
+  const handleModify = useCallback(() => {
+    if (selectedFile) {
+      openPromptModal({ type: 'modify', path: selectedFile })
+    }
+  }, [selectedFile, openPromptModal])
+  
+  const handleAddImage = useCallback(() => {
+    if (selectedFile) {
+      openPromptModal({ type: 'add-image', path: selectedFile })
+    }
+  }, [selectedFile, openPromptModal])
+  
+  return (
+    <div className="flex flex-col h-full">
+      {/* Directory Section */}
+      <div className="border-b p-4 space-y-3">
+        {/* Search */}
+        <div className="flex gap-2 items-center">
+          <MicButton
+            recording={searchTranscription.isRecording}
+            transcribing={searchTranscription.isConnecting}
+            onRecordingChange={(recording) => {
+              if (recording) {
+                searchBaseTextRef.current = searchQuery
+                searchTranscription.startRecording(searchQuery.length)
+              } else {
+                searchTranscription.stopRecording()
+              }
+            }}
+            size="sm"
+          />
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              placeholder="Search repository..."
+              className="pl-8 h-9 text-sm"
+            />
+          </div>
+          <Button size="sm" onClick={handleSearch} disabled={!searchQuery.trim() || isSearching}>
+            {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
+          </Button>
+        </div>
+        
+        {/* Search results */}
+        {searchResults.length > 0 && (
+          <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-muted/30">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                {searchResults.length} results
+              </span>
+              <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => setSearchResults([])}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="space-y-1">
+              {searchResults.slice(0, 10).map((result, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    handleSelectFile(result.path)
+                    setSearchResults([])
+                  }}
+                  className="w-full text-left p-1.5 rounded hover:bg-muted text-xs"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="font-medium truncate">{result.path}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1 text-sm text-muted-foreground overflow-x-auto">
+          {breadcrumbs.map((crumb, i) => (
+            <span key={crumb.path} className="flex items-center gap-1 shrink-0">
+              {i > 0 && <ChevronRight className="h-3 w-3" />}
+              <button
+                onClick={() => handleNavigateDir(crumb.path)}
+                className={`hover:text-foreground ${i === breadcrumbs.length - 1 ? 'text-foreground font-medium' : ''}`}
+              >
+                {i === 0 ? <Home className="h-4 w-4" /> : crumb.label}
+              </button>
+            </span>
+          ))}
+        </div>
+        
+        {/* Directory listing - dense grid */}
+        <div className="border rounded-lg p-2 max-h-40 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : error ? (
+            <p className="text-sm text-destructive p-2">{error}</p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1">
+              {entries.map(entry => (
+                <button
+                  key={entry.path}
+                  onClick={() => entry.type === 'dir' 
+                    ? handleNavigateDir(entry.path)
+                    : handleSelectFile(entry.path)
+                  }
+                  className={`
+                    flex items-center gap-1.5 px-2 py-1 text-xs rounded
+                    hover:bg-muted text-left truncate
+                    ${selectedFile === entry.path ? 'bg-muted ring-1 ring-primary' : ''}
+                  `}
+                  title={entry.name}
+                >
+                  {entry.type === 'dir' ? (
+                    <FolderOpen className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                  ) : (
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  )}
+                  <span className="truncate">{entry.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* File Preview/Editor Section */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {selectedFile ? (
+          <>
+            {/* File header */}
+            <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
+              <code className="text-xs truncate flex-1">{selectedFile}</code>
+              <div className="flex gap-1 ml-2">
+                {/* View mode toggle */}
+                <div className="flex rounded-md border overflow-hidden">
+                  <Button
+                    variant={viewMode === 'preview' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="rounded-none h-7 px-2"
+                    onClick={() => setViewMode('preview')}
+                    disabled={!isMarkdown}
+                    title="Preview"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'edit' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="rounded-none h-7 px-2"
+                    onClick={() => setViewMode('edit')}
+                    title="Edit"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'raw' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="rounded-none h-7 px-2"
+                    onClick={() => setViewMode('raw')}
+                    title="Raw"
+                  >
+                    <Code className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                
+                {editorDirty && (
+                  <span className="text-xs text-amber-600 self-center ml-2">Modified</span>
+                )}
+              </div>
+            </div>
+            
+            {/* File content */}
+            <div className="flex-1 overflow-auto min-h-0">
+              {viewMode === 'preview' && isMarkdown && fileContent ? (
+                <div className="p-4">
+                  <MarkdownPreview 
+                    content={fileContent}
+                    basePath={basePath}
+                    onNavigate={handleSelectFile}
+                  />
+                </div>
+              ) : viewMode === 'edit' ? (
+                <Editor
+                  height="100%"
+                  language={selectedFile.endsWith('.md') ? 'markdown' : selectedFile.endsWith('.ts') || selectedFile.endsWith('.tsx') ? 'typescript' : 'plaintext'}
+                  value={fileContent || ''}
+                  onChange={handleEditorChange}
+                  theme="vs-dark"
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    lineNumbers: 'on',
+                    wordWrap: 'on',
+                    scrollBeyondLastLine: false,
+                  }}
+                />
+              ) : (
+                <pre className="p-4 text-xs font-mono whitespace-pre-wrap overflow-auto">
+                  {fileContent}
+                </pre>
+              )}
+            </div>
+            
+            {/* Operations toolbar */}
+            <div className="border-t px-4 py-2 bg-muted/30 flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleInsert} className="gap-1">
+                <Plus className="h-3.5 w-3.5" />
+                Insert Section
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleModify} className="gap-1">
+                <Pencil className="h-3.5 w-3.5" />
+                Modify
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleAddImage} className="gap-1">
+                <Image className="h-3.5 w-3.5" />
+                Add Image
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <p>Select a file to preview</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
