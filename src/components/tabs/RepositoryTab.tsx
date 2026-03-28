@@ -57,8 +57,9 @@ export function RepositoryTab() {
   const [editorDirty, setEditorDirty] = useState(false)
   const [originalContent, setOriginalContent] = useState<string | null>(null)
   
-  // Text selection state for Modify button
+  // Text selection and cursor state for action buttons
   const [hasSelection, setHasSelection] = useState(false)
+  const [hasCursor, setHasCursor] = useState(false)
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null)
   
   // Voice transcription for search
@@ -173,26 +174,35 @@ export function RepositoryTab() {
     }
   }, [setFileContent, originalContent])
   
-  // Handle Monaco editor mount - track selection
+  // Handle Monaco editor mount - track selection and cursor
   const handleEditorMount: OnMount = useCallback((editor) => {
     editorRef.current = editor
-    editor.onDidChangeCursorSelection((e) => {
+    // Monaco always has a cursor when mounted
+    setHasCursor(true)
+    editor.onDidChangeCursorSelection(() => {
       const selection = editor.getSelection()
       const hasText = selection ? !selection.isEmpty() : false
       setHasSelection(hasText)
     })
   }, [])
   
-  // Track selection in preview mode
-  const handlePreviewMouseUp = useCallback(() => {
+  // Track selection in preview/raw mode
+  const handleTextMouseUp = useCallback(() => {
     const selection = window.getSelection()
     const hasText = selection ? selection.toString().trim().length > 0 : false
     setHasSelection(hasText)
+    // In preview/raw mode, selection also implies an insert point (after selection)
+    setHasCursor(hasText)
   }, [])
   
-  // Reset selection state when switching view modes
+  // Reset selection/cursor state when switching view modes
   useEffect(() => {
     setHasSelection(false)
+    // Edit mode (Monaco) will set hasCursor true on mount
+    // Preview/Raw modes start with no cursor until user selects
+    if (viewMode !== 'edit') {
+      setHasCursor(false)
+    }
   }, [viewMode])
   
   // Check if file is markdown
@@ -368,7 +378,14 @@ export function RepositoryTab() {
                     Stage
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={handleInsert} className="gap-1 h-7">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleInsert} 
+                  className="gap-1 h-7"
+                  disabled={!hasCursor}
+                  title={hasCursor ? "Insert at cursor" : "Place cursor or select text first"}
+                >
                   <Plus className="h-3.5 w-3.5" />
                   Insert
                 </Button>
@@ -383,7 +400,14 @@ export function RepositoryTab() {
                   <Pencil className="h-3.5 w-3.5" />
                   Modify
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleAddImage} className="gap-1 h-7">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleAddImage} 
+                  className="gap-1 h-7"
+                  disabled={!hasCursor}
+                  title={hasCursor ? "Add image at cursor" : "Place cursor or select text first"}
+                >
                   <Image className="h-3.5 w-3.5" />
                   Image
                 </Button>
@@ -433,7 +457,7 @@ export function RepositoryTab() {
               {viewMode === 'preview' && isMarkdown && fileContent ? (
                 <div 
                   className="p-4 overflow-auto flex-1"
-                  onMouseUp={handlePreviewMouseUp}
+                  onMouseUp={handleTextMouseUp}
                 >
                   <MarkdownPreview 
                     content={fileContent}
@@ -460,7 +484,10 @@ export function RepositoryTab() {
                   />
                 </div>
               ) : (
-                <pre className="p-4 text-xs font-mono whitespace-pre-wrap overflow-auto flex-1">
+                <pre 
+                  className="p-4 text-xs font-mono whitespace-pre-wrap overflow-auto flex-1"
+                  onMouseUp={handleTextMouseUp}
+                >
                   {fileContent}
                 </pre>
               )}
