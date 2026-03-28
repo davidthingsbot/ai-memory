@@ -115,12 +115,25 @@ export function RepositoryTab() {
   
   // Navigate to directory
   const handleNavigateDir = useCallback((path: string) => {
+    // Warn if there are unsaved changes
+    if (editorDirty) {
+      const discard = confirm('You have unsaved changes. Discard them?')
+      if (!discard) return
+    }
     setCurrentPath(path)
     clearSelectedFile()
-  }, [setCurrentPath, clearSelectedFile])
+    setEditorDirty(false)
+    setOriginalContent(null)
+  }, [setCurrentPath, clearSelectedFile, editorDirty])
   
   // Select file
   const handleSelectFile = useCallback(async (path: string) => {
+    // Warn if there are unsaved changes
+    if (editorDirty && selectedFile !== path) {
+      const discard = confirm('You have unsaved changes. Discard them?')
+      if (!discard) return
+    }
+    
     try {
       const file = await readFile(path)
       if (file) {
@@ -131,7 +144,7 @@ export function RepositoryTab() {
     } catch (err) {
       setError('Failed to load file')
     }
-  }, [selectFile])
+  }, [selectFile, editorDirty, selectedFile])
   
   // Breadcrumb navigation
   const pathSegments = currentPath ? currentPath.split('/') : []
