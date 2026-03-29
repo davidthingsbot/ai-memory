@@ -1,6 +1,6 @@
 /**
  * OpenAI Realtime API session for transcription only.
- * 
+ *
  * Connects via WebSocket, streams audio, receives real-time transcription.
  * No AI responses - just speech-to-text.
  */
@@ -56,7 +56,8 @@ export function createTranscriptionSession(
   const connect = async () => {
     try {
       // Create WebSocket connection
-      const url = `${REALTIME_URL}?model=gpt-4o-transcribe`
+      // Dedicated transcription session (GA format — no response generation)
+      const url = `${REALTIME_URL}?intent=transcription`
       ws = new WebSocket(url, [
         'realtime',
         `openai-insecure-api-key.${apiKey}`,
@@ -64,36 +65,45 @@ export function createTranscriptionSession(
 
       ws.onopen = async () => {
         connected = true
+        console.log('[voice] WebSocket connected (transcription session)')
 
-        // Configure session for transcription only
-        ws?.send(JSON.stringify({
+        const sessionConfig = {
           type: 'session.update',
           session: {
-            input_audio_format: 'pcm16',
-            input_audio_transcription: {
-              model: 'gpt-4o-transcribe',
-            },
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500,
+            type: 'transcription',
+            audio: {
+              input: {
+                format: { type: 'audio/pcm', rate: 24000 },
+                transcription: {
+                  model: 'gpt-4o-transcribe',
+                  language: 'en',
+                },
+                noise_reduction: { type: 'near_field' },
+                turn_detection: {
+                  type: 'server_vad',
+                  threshold: 0.5,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 500,
+                },
+              },
             },
           },
-        }))
+        }
+        console.log('[voice] Sending session config:', sessionConfig)
+        ws?.send(JSON.stringify(sessionConfig))
 
         // Set up audio capture
         try {
           audioContext = new AudioContext()
           mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-          
+
           const actualRate = audioContext.sampleRate
           const source = audioContext.createMediaStreamSource(mediaStream)
           processor = audioContext.createScriptProcessor(4096, 1, 1)
 
           processor.onaudioprocess = (e) => {
-            if (!connected || !ws) return
-            
+            if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return
+
             const inputData = e.inputBuffer.getChannelData(0)
             // Downsample to 24kHz if needed
             const samples = actualRate !== 24000
@@ -101,7 +111,7 @@ export function createTranscriptionSession(
               : inputData
             const pcm16 = float32ToPcm16(samples)
             const base64 = pcm16ToBase64(pcm16)
-            
+
             ws.send(JSON.stringify({
               type: 'input_audio_buffer.append',
               audio: base64,
@@ -110,7 +120,8 @@ export function createTranscriptionSession(
 
           source.connect(processor)
           processor.connect(audioContext.destination)
-          
+
+          console.log(`[voice] Audio capture started (sample rate: ${actualRate}Hz, downsampling to 24kHz)`)
           callbacks.onConnected?.()
         } catch (err) {
           callbacks.onError?.('Failed to access microphone')
@@ -126,7 +137,15 @@ export function createTranscriptionSession(
           return
         }
 
+        // Log all non-audio messages
+        console.log('[voice] <<', data.type, data.type === 'error' ? data.error : '')
+
         switch (data.type) {
+          case 'session.created':
+          case 'session.updated':
+            console.log('[voice] Session:', JSON.stringify(data.session || data, null, 2).slice(0, 500))
+            break
+
           case 'input_audio_buffer.speech_started':
             callbacks.onSpeechStarted?.()
             break
@@ -135,36 +154,38 @@ export function createTranscriptionSession(
             callbacks.onSpeechStopped?.()
             break
 
-          // Streaming transcript delta (both old and new event names)
+          // Streaming transcript delta
           case 'conversation.item.input_audio_transcription.delta':
-          case 'response.audio_transcript.delta':
+            console.log('[voice] delta:', JSON.stringify(data.delta || ''))
             transcriptAcc += data.delta || ''
             callbacks.onTranscriptDelta?.(data.delta || '')
             break
 
-          // Final transcript (both old and new event names)
-          case 'conversation.item.input_audio_transcription.completed':
-          case 'response.audio_transcript.done': {
+          // Final transcript
+          case 'conversation.item.input_audio_transcription.completed': {
             const finalText = data.transcript || transcriptAcc
+            console.log('[voice] complete:', JSON.stringify(finalText))
             transcriptAcc = ''
             callbacks.onTranscriptComplete?.(finalText)
             break
           }
 
           case 'error':
-            console.error('[realtime-transcription] error:', data.error)
+            console.error('[voice] ERROR:', data.error)
             callbacks.onError?.(data.error?.message || 'Unknown error')
             break
         }
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log(`[voice] WebSocket closed (code: ${event.code}, reason: ${event.reason || 'none'})`)
         connected = false
         cleanup()
         callbacks.onDisconnected?.()
       }
 
-      ws.onerror = () => {
+      ws.onerror = (event) => {
+        console.error('[voice] WebSocket error:', event)
         callbacks.onError?.('WebSocket connection failed')
       }
 

@@ -184,13 +184,12 @@ Do NOT describe how the notes should be edited.
 Do NOT reference the original notes.
 Write as if briefing someone to create the content from scratch.
 Use plain ASCII quotes (" and ') only.
+Never ask for clarification - just work with what's given.
 
-If something is genuinely ambiguous, use the ask_user tool. Otherwise return ONLY the task brief.`
+Return ONLY the task brief.`
         },
         { role: 'user', content: text }
       ],
-      tools: [askUserTool],
-      tool_choice: 'auto',
     }),
   })
 
@@ -199,13 +198,6 @@ If something is genuinely ambiguous, use the ask_user tool. Otherwise return ONL
   }
 
   const data = await response.json()
-  
-  const toolResult = processToolCalls(data)
-  if (toolResult) {
-    onProgress?.('❓ Clarification needed')
-    return toolResult
-  }
-  
   const result = data.choices[0]?.message?.content
   if (!result) throw new Error('No response from AI')
 

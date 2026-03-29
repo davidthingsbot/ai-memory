@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAppStore, type FileChange } from '@/store'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -7,7 +7,9 @@ import { MicButton } from '@/components/MicButton'
 import { WorkingBox } from '@/components/WorkingBox'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { generatePlan, executePlan, type Plan } from '@/lib/prompt-operations'
-import { Loader2, Sparkles, ArrowLeft, Check, AlertCircle } from 'lucide-react'
+import { tidyText, improveText, fullSpecText } from '@/lib/text-tools'
+import { ClarificationBox } from '@/components/ClarificationBox'
+import { Loader2, Sparkles, ArrowLeft, Check, AlertCircle, Wand2, Lightbulb, FileSearch, X, Undo2, Redo2 } from 'lucide-react'
 
 type Stage = 'intent' | 'plan' | 'executing' | 'done' | 'error'
 
@@ -23,7 +25,43 @@ export function PromptModal() {
   } = useAppStore()
   
   const [stage, setStage] = useState<Stage>('intent')
-  const [intent, setIntent] = useState('')
+  const [intent, setIntentRaw] = useState('')
+  const undoStack = useRef<string[]>([])
+  const redoStack = useRef<string[]>([])
+
+  // Set intent with undo tracking (for programmatic changes like refine)
+  const pushIntent = useCallback((value: string) => {
+    undoStack.current.push(intent)
+    redoStack.current = []
+    setIntentRaw(value)
+  }, [intent])
+
+  // Typing — snapshot on pause (debounced)
+  const intentSnapshotTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const setIntent = useCallback((value: string) => {
+    setIntentRaw(value)
+    if (intentSnapshotTimer.current) clearTimeout(intentSnapshotTimer.current)
+    intentSnapshotTimer.current = setTimeout(() => {
+      // Only push if different from last snapshot
+      const last = undoStack.current[undoStack.current.length - 1]
+      if (value !== last && value !== '') {
+        undoStack.current.push(value)
+        redoStack.current = []
+      }
+    }, 1000)
+  }, [])
+
+  const handleUndo = useCallback(() => {
+    if (undoStack.current.length === 0) return
+    redoStack.current.push(intent)
+    setIntentRaw(undoStack.current.pop()!)
+  }, [intent])
+
+  const handleRedo = useCallback(() => {
+    if (redoStack.current.length === 0) return
+    undoStack.current.push(intent)
+    setIntentRaw(redoStack.current.pop()!)
+  }, [intent])
   const [plan, setPlan] = useState<Plan | null>(null)
   const [editedPlan, setEditedPlan] = useState('')
   const [steps, setSteps] = useState<string[]>([])
@@ -47,6 +85,23 @@ export function PromptModal() {
   const addStep = useCallback((step: string) => {
     setSteps(prev => [...prev, step])
   }, [])
+
+  // Build context object for logging
+  const buildContext = useCallback(() => ({
+    operation: promptModalOperation,
+    file: selectedFile,
+    fileContentLength: fileContent?.length ?? 0,
+    fileContentPreview: fileContent ? fileContent.slice(0, 200) + (fileContent.length > 200 ? '...' : '') : null,
+  }), [promptModalOperation, selectedFile, fileContent])
+
+  // Log full context when modal opens
+  useEffect(() => {
+    if (promptModalOpen && promptModalOperation) {
+      console.group('%c[AI Modal] Opened', 'color: #3b82f6; font-weight: bold')
+      console.log('Context:', buildContext())
+      console.groupEnd()
+    }
+  }, [promptModalOpen, promptModalOperation, buildContext])
   
   // Reset state when modal opens/closes
   const handleOpenChange = useCallback((open: boolean) => {
@@ -61,27 +116,75 @@ export function PromptModal() {
       setError(null)
       setIsGenerating(false)
       setStartTime(null)
+      setClarificationQuestion(null)
+      pendingRefineMode.current = null
+      undoStack.current = []
+      redoStack.current = []
     }
   }, [closePromptModal])
   
-  // Generate plan from intent
+  // Generate plan from intent (empty intent = direct execute using just the context)
   const handleGeneratePlan = useCallback(async () => {
-    if (!intent.trim() || !promptModalOperation) return
-    
+    if (!promptModalOperation) return
+    const effectiveIntent = intent.trim() || `${promptModalOperation.type} at ${promptModalOperation.path}`
+
+    console.group('%c[AI Modal] Generate Plan', 'color: #22c55e; font-weight: bold')
+    console.log('Intent:', effectiveIntent)
+    console.log('Context:', buildContext())
+    console.groupEnd()
+
     setIsGenerating(true)
     setError(null)
     setSteps([])
     setStartTime(Date.now())
+
+    if (!intent.trim()) {
+      // No intent — skip plan, execute directly from context
+      addStep('Executing from context...')
+      try {
+        const generatedPlan = await generatePlan({
+          intent: effectiveIntent,
+          operation: promptModalOperation,
+          filePath: selectedFile || undefined,
+          fileContent: fileContent || undefined,
+        }, addStep)
+
+        setStage('executing')
+        const result = await executePlan({
+          plan: generatedPlan,
+          operation: promptModalOperation,
+          filePath: selectedFile || undefined,
+          fileContent: fileContent || undefined,
+        }, addStep)
+
+        const change: FileChange = {
+          path: result.path,
+          action: result.action,
+          content: result.content,
+          oldContent: fileContent || undefined,
+        }
+        addPendingChange(change)
+        addStep(`✓ Changes staged: ${result.path}`)
+        setStage('done')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Operation failed')
+        setStage('error')
+      } finally {
+        setIsGenerating(false)
+      }
+      return
+    }
+
     addStep('Analyzing intent...')
-    
+
     try {
       const generatedPlan = await generatePlan({
-        intent,
+        intent: effectiveIntent,
         operation: promptModalOperation,
         filePath: selectedFile || undefined,
         fileContent: fileContent || undefined,
       }, addStep)
-      
+
       setPlan(generatedPlan)
       setEditedPlan(generatedPlan.description)
       setStage('plan')
@@ -92,12 +195,18 @@ export function PromptModal() {
     } finally {
       setIsGenerating(false)
     }
-  }, [intent, promptModalOperation, selectedFile, fileContent, addStep])
-  
+  }, [intent, promptModalOperation, selectedFile, fileContent, addStep, buildContext, addPendingChange])
+
   // Execute the plan
   const handleExecute = useCallback(async () => {
     if (!plan || !promptModalOperation) return
-    
+
+    console.group('%c[AI Modal] Execute Plan', 'color: #f59e0b; font-weight: bold')
+    console.log('Plan:', editedPlan)
+    console.log('Original plan:', plan)
+    console.log('Context:', buildContext())
+    console.groupEnd()
+
     setStage('executing')
     setError(null)
     setStartTime(Date.now())
@@ -126,52 +235,7 @@ export function PromptModal() {
       setError(err instanceof Error ? err.message : 'Execution failed')
       setStage('error')
     }
-  }, [plan, editedPlan, promptModalOperation, selectedFile, fileContent, addStep, addPendingChange])
-  
-  // Skip plan review and execute directly
-  const handleSkipPlan = useCallback(async () => {
-    // Generate and execute in one step
-    if (!intent.trim() || !promptModalOperation) return
-    
-    setIsGenerating(true)
-    setStage('executing')
-    setError(null)
-    setSteps([])
-    setStartTime(Date.now())
-    addStep('Generating and executing...')
-    
-    try {
-      const generatedPlan = await generatePlan({
-        intent,
-        operation: promptModalOperation,
-        filePath: selectedFile || undefined,
-        fileContent: fileContent || undefined,
-      }, addStep)
-      
-      const result = await executePlan({
-        plan: generatedPlan,
-        operation: promptModalOperation,
-        filePath: selectedFile || undefined,
-        fileContent: fileContent || undefined,
-      }, addStep)
-      
-      const change: FileChange = {
-        path: result.path,
-        action: result.action,
-        content: result.content,
-        oldContent: fileContent || undefined,
-      }
-      addPendingChange(change)
-      
-      addStep(`✓ Changes staged: ${result.path}`)
-      setStage('done')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Operation failed')
-      setStage('error')
-    } finally {
-      setIsGenerating(false)
-    }
-  }, [intent, promptModalOperation, selectedFile, fileContent, addStep, addPendingChange])
+  }, [plan, editedPlan, promptModalOperation, selectedFile, fileContent, addStep, addPendingChange, buildContext])
   
   // Go back to intent stage
   const handleBack = useCallback(() => {
@@ -198,6 +262,60 @@ export function PromptModal() {
     }
   }, [intent, transcription])
   
+  // Refine intent text with AI (tidy/improve/full-spec)
+  const [isRefining, setIsRefining] = useState(false)
+  const [clarificationQuestion, setClarificationQuestion] = useState<string | null>(null)
+  const pendingRefineMode = useRef<'tidy' | 'improve' | 'fullspec' | null>(null)
+
+  const runRefine = useCallback(async (mode: 'tidy' | 'improve' | 'fullspec', text: string) => {
+    setIsRefining(true)
+    setClarificationQuestion(null)
+    const context = {
+      filePath: selectedFile || undefined,
+      fileContent: fileContent || undefined,
+      selectedText: promptModalOperation?.selection?.text,
+      repoName: useAppStore.getState().selectedRepoFullName || undefined,
+    }
+    const fn = mode === 'tidy' ? tidyText : mode === 'improve' ? improveText : fullSpecText
+
+    console.group(`%c[AI Modal] Refine: ${mode}`, 'color: #a855f7; font-weight: bold')
+    console.log('Input:', text)
+    console.log('Context:', context)
+    console.groupEnd()
+
+    try {
+      const result = await fn(text, addStep, context)
+      if (result.type === 'result') {
+        pushIntent(result.content)
+      } else if (result.type === 'question') {
+        pendingRefineMode.current = mode
+        setClarificationQuestion(result.content)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refine failed')
+    } finally {
+      setIsRefining(false)
+    }
+  }, [selectedFile, fileContent, promptModalOperation, addStep, pushIntent])
+
+  const handleRefine = useCallback((mode: 'tidy' | 'improve' | 'fullspec') => {
+    if (!intent.trim()) return
+    runRefine(mode, intent)
+  }, [intent, runRefine])
+
+  const handleClarificationAnswer = useCallback((answer: string) => {
+    const mode = pendingRefineMode.current
+    if (!mode) return
+    // Re-run refine with the answer appended to the intent
+    const augmented = `${intent}\n\n[Clarification: ${answer}]`
+    runRefine(mode, augmented)
+  }, [intent, runRefine])
+
+  const handleClarificationSkip = useCallback(() => {
+    setClarificationQuestion(null)
+    pendingRefineMode.current = null
+  }, [])
+
   // Get operation title
   const getTitle = () => {
     if (!promptModalOperation) return 'AI Operation'
@@ -210,20 +328,50 @@ export function PromptModal() {
       default: return 'AI Operation'
     }
   }
-  
+
+  // Build context description for display
+  const contextDescription = (() => {
+    const op = promptModalOperation
+    if (!op) return null
+    const parts: string[] = []
+    if (op.path) parts.push(op.path)
+    if (op.selection?.text) {
+      const preview = op.selection.text.length > 80
+        ? op.selection.text.slice(0, 77).replace(/\n/g, ' ') + '...'
+        : op.selection.text.replace(/\n/g, ' ')
+      parts.push(`selection: "${preview}"`)
+    } else if (op.position != null && fileContent) {
+      const line = fileContent.slice(0, op.position).split('\n').length
+      const col = op.position - fileContent.lastIndexOf('\n', op.position - 1)
+      parts.push(`line ${line}, col ${col}`)
+    }
+    return parts.join(' \u2022 ')
+  })()
+
   return (
     <Dialog open={promptModalOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5" />
-            {getTitle()}
-            {selectedFile && (
-              <code className="text-xs font-normal text-muted-foreground ml-2">
-                {selectedFile}
-              </code>
-            )}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              {getTitle()}
+            </DialogTitle>
+            <button
+              onClick={() => handleOpenChange(false)}
+              className="rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {contextDescription && (
+            <div className="mt-1">
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground px-3 py-0.5 rounded bg-muted ring-1 ring-border max-w-full">
+                <span className="font-medium shrink-0">Context:</span>
+                <span className="truncate">{contextDescription}</span>
+              </span>
+            </div>
+          )}
         </DialogHeader>
         
         <div className="flex-1 overflow-auto space-y-4">
@@ -235,7 +383,7 @@ export function PromptModal() {
                   What do you want to {promptModalOperation?.type === 'insert' ? 'add' : 'change'}?
                 </label>
                 <div className="flex gap-2">
-                  <MicButton
+                    <MicButton
                     recording={transcription.isRecording}
                     transcribing={transcription.isConnecting}
                     onRecordingChange={handleRecordingChange}
@@ -256,11 +404,50 @@ export function PromptModal() {
                 )}
               </div>
               
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={handleSkipPlan} disabled={!intent.trim() || isGenerating}>
-                  Skip Plan
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost" size="sm" className="h-7 w-7 p-0"
+                  onClick={handleUndo}
+                  disabled={undoStack.current.length === 0}
+                  title="Undo"
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
                 </Button>
-                <Button onClick={handleGeneratePlan} disabled={!intent.trim() || isGenerating}>
+                <Button
+                  variant="ghost" size="sm" className="h-7 w-7 p-0"
+                  onClick={handleRedo}
+                  disabled={redoStack.current.length === 0}
+                  title="Redo"
+                >
+                  <Redo2 className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="h-7 gap-1 text-xs"
+                  onClick={() => handleRefine('tidy')}
+                  disabled={!intent.trim() || isRefining || isGenerating}
+                  title="Fix spelling, grammar, formatting"
+                >
+                  <Wand2 className="h-3 w-3" /> Tidy
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="h-7 gap-1 text-xs"
+                  onClick={() => handleRefine('improve')}
+                  disabled={!intent.trim() || isRefining || isGenerating}
+                  title="Suggest structure improvements"
+                >
+                  <Lightbulb className="h-3 w-3" /> Improve
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="h-7 gap-1 text-xs"
+                  onClick={() => handleRefine('fullspec')}
+                  disabled={!intent.trim() || isRefining || isGenerating}
+                  title="Comprehensive analysis with web research"
+                >
+                  <FileSearch className="h-3 w-3" /> Full Spec
+                </Button>
+                {isRefining && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                <div className="flex-1" />
+                <Button size="sm" onClick={handleGeneratePlan} disabled={isGenerating || isRefining}>
                   {isGenerating ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
@@ -269,6 +456,15 @@ export function PromptModal() {
                   Generate Plan
                 </Button>
               </div>
+
+              {/* Clarification from AI */}
+              {clarificationQuestion && (
+                <ClarificationBox
+                  question={clarificationQuestion}
+                  onAnswer={handleClarificationAnswer}
+                  onSkip={handleClarificationSkip}
+                />
+              )}
             </>
           )}
           

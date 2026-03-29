@@ -8,6 +8,7 @@ export interface DirectoryEntry {
   path: string
   type: 'file' | 'dir'
   size?: number
+  sha?: string
 }
 
 export interface FileContent {
@@ -71,6 +72,7 @@ export async function listDirectory(path: string = ''): Promise<DirectoryEntry[]
       path: item.path,
       type: item.type === 'dir' ? 'dir' : 'file',
       size: item.size,
+      sha: item.sha,
     }))
   } catch (err) {
     if ((err as any)?.status === 404) {

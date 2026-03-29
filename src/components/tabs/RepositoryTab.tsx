@@ -14,7 +14,7 @@ import { findSelectionInRaw, findImageMarkdown, findCodeFenceBounds, findTableBo
 import {
   FolderOpen, FileText, ChevronRight, Home,
   Loader2, Eye, Code, Edit3, Search, X,
-  Plus, Pencil, Image, Save, FilePlus, RotateCcw, GitBranch
+  Plus, Pencil, Image, Save, FilePlus, FolderPlus, RotateCcw, GitBranch
 } from 'lucide-react'
 
 // Get character offset of a DOM position within a container's text nodes
@@ -274,6 +274,9 @@ export function RepositoryTab() {
   // Image preview state (for binary image files)
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null)
 
+  // Track file SHA to detect remote changes
+  const fileShaRef = useRef<string | null>(null)
+
   // Remember last-viewed file per directory
   const dirFileHistory = useRef<Map<string, string>>(new Map())
   const suppressAutoSelect = useRef(false)
@@ -310,18 +313,38 @@ export function RepositoryTab() {
     setError(null)
     try {
       const results = await listDirectory(path)
-      // Sort: folders first, then alphabetically
       results.sort((a, b) => {
         if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
         return a.name.localeCompare(b.name)
       })
       setEntries(results)
+
+      // Check if the currently viewed file has changed remotely
+      if (selectedFile && fileShaRef.current && !editorDirty) {
+        const entry = results.find(e => e.path === selectedFile)
+        if (entry?.sha && entry.sha !== fileShaRef.current) {
+          // File changed remotely — silently reload
+          const isBinary = /\.(png|jpe?g|gif|svg|webp|ico|bmp|avif|pdf)$/i.test(selectedFile)
+          if (isBinary) {
+            const dataUrl = await getFileAsDataUrl(selectedFile)
+            selectFile(selectedFile, '')
+            setImageDataUrl(dataUrl)
+          } else {
+            const file = await readFile(selectedFile)
+            if (file) {
+              selectFile(selectedFile, file.content)
+              setOriginalContent(file.content)
+              fileShaRef.current = file.sha
+            }
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load directory')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [selectedFile, editorDirty, selectFile])
   
   // Initial load and path changes
   useEffect(() => {
@@ -342,7 +365,7 @@ export function RepositoryTab() {
   // 3. File matching directory name (e.g. docs/ → docs.md)
   // 4. First file in the listing
   useEffect(() => {
-    if (suppressAutoSelect.current) { suppressAutoSelect.current = false; return }
+    if (suppressAutoSelect.current) return
     if (selectedFile || entries.length === 0) return
     const files = entries.filter(e => e.type === 'file')
     if (files.length === 0) return
@@ -401,21 +424,23 @@ export function RepositoryTab() {
     setEditorDirty(false)
     setOriginalContent(null)
     setImageDataUrl(null)
+    fileShaRef.current = null
     setCursorOffset(null)
     setSelectionRange(null)
     if (path !== currentPath) {
-      // Navigating to a different directory
+      suppressAutoSelect.current = false
       setEntries([])
       setCurrentPath(path)
     } else {
-      // Clicking current directory — suppress auto-select so file stays deselected
+      // Same directory — suppress auto-select but refetch entries for updates
       suppressAutoSelect.current = true
+      loadDirectory(path)
     }
   }, [setCurrentPath, clearSelectedFile, editorDirty, selectedFile, currentPath])
   
-  // Select file
+  // Select file — always fetches fresh; detects remote changes via SHA
   const handleSelectFile = useCallback(async (path: string) => {
-    // Warn if there are unsaved changes
+    suppressAutoSelect.current = false
     if (editorDirty && selectedFile !== path) {
       const discard = confirm('You have unsaved changes. Discard them?')
       if (!discard) return
@@ -425,17 +450,23 @@ export function RepositoryTab() {
 
     try {
       if (isBinary) {
-        // Load binary file as data URL (images, PDFs)
         const dataUrl = await getFileAsDataUrl(path)
         selectFile(path, '')
         setOriginalContent(null)
         setImageDataUrl(dataUrl)
+        fileShaRef.current = null
       } else {
         const file = await readFile(path)
         if (file) {
+          // If re-selecting the same file, check if it changed remotely
+          if (path === selectedFile && fileShaRef.current && fileShaRef.current !== file.sha && editorDirty) {
+            const reload = confirm('This file has been updated remotely. Reload and lose local changes?')
+            if (!reload) return
+          }
           selectFile(path, file.content)
           setOriginalContent(file.content)
           setImageDataUrl(null)
+          fileShaRef.current = file.sha
         }
       }
       setEditorDirty(false)
@@ -785,6 +816,25 @@ export function RepositoryTab() {
   
   // Get base path for resolving relative links
   const basePath = selectedFile ? selectedFile.split('/').slice(0, -1).join('/') : ''
+
+  // Compute AI context description
+  const aiContext = (() => {
+    const dir = currentPath || '/'
+    if (!selectedFile) {
+      return dir
+    }
+    if (selectionRange && selectionRange.text) {
+      const preview = selectionRange.text.length > 60
+        ? selectionRange.text.slice(0, 57) + '...'
+        : selectionRange.text
+      return `${selectedFile} selection: "${preview.replace(/\n/g, ' ')}"`
+    }
+    if (cursorOffset !== null && fileContent) {
+      const line = fileContent.slice(0, cursorOffset).split('\n').length
+      return `${selectedFile} line ${line}`
+    }
+    return selectedFile
+  })()
   
   // Handle operations — pass position/selection to modal
   const handleInsert = useCallback(() => {
@@ -871,8 +921,16 @@ export function RepositoryTab() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search repository..."
-              className="pl-8 h-9 text-sm"
+              className="pl-8 pr-8 h-9 text-sm"
             />
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(''); setSearchResults([]) }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
           <Button size="sm" onClick={handleSearch} disabled={!searchQuery.trim() || isSearching}>
             {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
@@ -898,8 +956,14 @@ export function RepositoryTab() {
                 <button
                   key={i}
                   onClick={() => {
+                    // Navigate to the file's parent directory so it appears in the listing
+                    const dir = result.path.split('/').slice(0, -1).join('/')
+                    if (dir !== currentPath) {
+                      setCurrentPath(dir)
+                    }
                     handleSelectFile(result.path)
                     setSearchResults([])
+                    setSearchQuery('')
                   }}
                   className="w-full text-left p-1.5 rounded hover:bg-muted text-xs"
                 >
@@ -1076,6 +1140,14 @@ export function RepositoryTab() {
               )}
             </div>
 
+            {/* AI context capsule */}
+            <div className="px-4 py-1 border-b bg-muted/20">
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground px-3 py-0.5 rounded bg-muted ring-1 ring-border">
+                <span className="font-medium shrink-0">AI context:</span>
+                <span className="truncate">{aiContext}</span>
+              </span>
+            </div>
+
             {/* File content */}
             <div className="flex-1 min-h-0 flex flex-col relative">
               {/* Blinking cursor for preview/raw modes */}
@@ -1181,6 +1253,22 @@ export function RepositoryTab() {
                 <FilePlus className="h-3.5 w-3.5" />
                 New File
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1 h-7"
+                onClick={() => openPromptModal({ type: 'new-folder', path: currentPath })}
+              >
+                <FolderPlus className="h-3.5 w-3.5" />
+                New Directory
+              </Button>
+            </div>
+            {/* AI context capsule */}
+            <div className="px-4 py-1 border-b bg-muted/20">
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground px-3 py-0.5 rounded bg-muted ring-1 ring-border">
+                <span className="font-medium shrink-0">AI context:</span>
+                <span className="truncate">{aiContext}</span>
+              </span>
             </div>
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
               <p>Select a file to preview</p>
