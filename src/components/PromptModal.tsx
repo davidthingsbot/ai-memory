@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useAppStore, type FileChange } from '@/store'
+import { useAppStore } from '@/store'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -533,8 +533,8 @@ export function PromptModal() {
             </div>
           )}
           
-          {/* Working steps - show during intent/plan stages too if generating */}
-          {(stage === 'intent' || stage === 'plan') && steps.length > 0 && (
+          {/* Working steps - show while executing */}
+          {stage === 'executing' && steps.length > 0 && (
             <WorkingBox steps={steps} isWorking={isGenerating} startTime={startTime || undefined} />
           )}
         </div>

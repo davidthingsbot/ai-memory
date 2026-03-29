@@ -196,7 +196,6 @@ export async function searchFiles(query: string): Promise<{ path: string; matche
 export async function getRepoTree(maxDepth: number = 3): Promise<DirectoryEntry[]> {
   const octokit = getOctokit()
   const { owner, repo } = getRepoInfo()
-  const selectedRepo = getSelectedRepo()
   
   try {
     const response = await octokit.rest.git.getTree({

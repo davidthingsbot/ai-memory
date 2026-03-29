@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import { startRecording, stopRecording, cancelRecording, transcribeAudio } from './audio-transcribe'
+import { startRecording, stopRecording, transcribeAudio } from './audio-transcribe'
 
 interface UseWhisperTranscriptionOptions {
   onTranscriptInsert?: (newText: string, insertPosition: number) => void

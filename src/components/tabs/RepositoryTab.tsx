@@ -76,7 +76,7 @@ function getPreviewCursorOffset(sel: Selection, fileContent: string, container: 
 
 
 // Set DOM selection on a pre element from character offsets
-function applySelectionToPre(pre: HTMLPreElement, start: number, end: number) {
+function applySelectionToPre(pre: HTMLElement, start: number, end: number) {
   const sel = window.getSelection()
   if (!sel) return
 
@@ -126,7 +126,6 @@ function scrollSelectionIntoView() {
     // Collapsed caret — use getClientRects
     const rects = range.getClientRects()
     if (rects.length > 0) {
-      const r = rects[0]
       const el = range.startContainer.parentElement
       if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
       return
@@ -286,7 +285,7 @@ export function RepositoryTab() {
   const [cursorOffset, setCursorOffset] = useState<number | null>(null)
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number; text: string } | null>(null)
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null)
-  const rawPreRef = useRef<HTMLPreElement>(null)
+  const rawPreRef = useRef<HTMLElement>(null)
   const previewContainerRef = useRef<HTMLDivElement>(null)
   const selectedMediaRef = useRef<HTMLElement | null>(null)
 
@@ -1321,7 +1320,7 @@ export function RepositoryTab() {
                   </div>
                 ) : (
                   <pre
-                    ref={rawPreRef}
+                    ref={rawPreRef as React.RefObject<HTMLPreElement>}
                     className="p-4 text-xs font-mono whitespace-pre-wrap overflow-auto flex-1"
                     onMouseUp={handleTextMouseUp}
                   >

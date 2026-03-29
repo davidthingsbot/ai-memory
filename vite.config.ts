@@ -8,7 +8,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 const REPO_NAME = 'ai-memory'
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }): import('vite').UserConfig & { test?: import('vitest/config').UserConfig['test'] } => ({
+export default defineConfig(({ mode }) => ({
   test: {
     environment: 'jsdom',
     globals: true,

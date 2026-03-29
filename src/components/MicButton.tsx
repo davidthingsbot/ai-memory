@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Mic, Loader2 } from 'lucide-react'
+import { Mic } from 'lucide-react'
 
 interface MicButtonProps {
   recording: boolean
