@@ -113,7 +113,7 @@ ${dirContext.referenceFile ? `\nReference file (${dirContext.referenceFile.path}
   const parentDir = isNewOp ? (request.filePath || '') : ''
 
   const userPrompt = `Operation type: ${request.operation.type}
-${isNewOp ? `Parent directory: ${parentDir || '/'}\nIMPORTANT: Any new files or folders MUST be created inside "${parentDir || '/'}"` : `File: ${request.filePath || 'new file'}`}
+${isNewOp ? `Parent directory: ${parentDir || '/'}\nIMPORTANT: New content goes directly in "${parentDir || '/'}". Do NOT create subdirectories unless the user explicitly asks for one.` : `File: ${request.filePath || 'new file'}`}
 ${selectionContext}${dirContextStr}
 ${request.fileContent ? `\nCurrent content:\n\`\`\`\n${request.fileContent.slice(0, 2000)}${request.fileContent.length > 2000 ? '\n...(truncated)' : ''}\n\`\`\`` : ''}
 
@@ -323,7 +323,7 @@ ${dirContext.referenceFile ? `\nReference file (${dirContext.referenceFile.path}
 - Location: ${request.plan.location || 'appropriate location'}
 ${request.plan.outline ? `- Outline:\n${request.plan.outline.map(o => `  - ${o}`).join('\n')}` : ''}
 
-${isNewOp ? `Parent directory: ${parentDir || '/'}\nIMPORTANT: The path in your response MUST start with "${parentDir ? parentDir + '/' : ''}"` : `File: ${request.filePath || 'needs to be determined'}`}
+${isNewOp ? `Parent directory: ${parentDir || '/'}\nIMPORTANT: For the "path" field in your response, return ONLY the filename (e.g. "notes.md"), NOT the full path. The parent directory will be prepended automatically.` : `File: ${request.filePath || 'needs to be determined'}`}
 ${selectionContext}${dirContextStr}
 ${request.fileContent ? `\nCurrent content:\n\`\`\`\n${request.fileContent}\n\`\`\`` : ''}
 
@@ -382,11 +382,20 @@ Execute this plan and generate the content. Return only valid JSON.`
       }
     }
 
-    // Wide result — return as-is
+    // Wide result — enforce parent directory for new-file/new-folder ops
+    let resultPath: string = parsed.path || request.filePath || 'untitled.md'
+    const isNewOp = op.type === 'new-file' || op.type === 'new-folder'
+    if (isNewOp && request.filePath != null) {
+      const parentDir = request.filePath // This is the directory path for new ops
+      // Extract just the filename from whatever the AI returned
+      const aiFilename = resultPath.split('/').pop() || resultPath
+      resultPath = parentDir ? `${parentDir}/${aiFilename}` : aiFilename
+    }
+
     onProgress?.(`Generated ${aiContent.length} characters`)
     return {
-      path: parsed.path || request.filePath || 'untitled.md',
-      action: parsed.action || 'modify',
+      path: resultPath,
+      action: parsed.action || (isNewOp ? 'create' : 'modify'),
       content: aiContent,
     }
   } catch {

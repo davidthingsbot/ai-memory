@@ -9,6 +9,8 @@ import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
 import { generatePlan, executePlan, type DirectoryContext } from '@/lib/prompt-operations'
 import { listDirectory, readFile, getOldestFileInDirectory } from '@/lib/github-tools'
 import { tidyText, improveText, fullSpecText } from '@/lib/text-tools'
+import { getOpenAIKey } from '@/components/Credentials'
+import { getSelectedModel } from '@/components/ModelSelector'
 import { ClarificationBox } from '@/components/ClarificationBox'
 import { Loader2, Sparkles, Check, AlertCircle, Wand2, Lightbulb, FileSearch, X, Undo2, Redo2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -293,9 +295,9 @@ export function PromptModal() {
     setIsRefining(true)
     setClarificationQuestion(null)
 
-    const apiKey = (await import('@/components/Credentials')).getOpenAIKey()
+    const apiKey = getOpenAIKey()
     if (!apiKey) { setError('No OpenAI API key'); setIsRefining(false); return }
-    const model = (await import('@/components/ModelSelector')).getSelectedModel()
+    const model = getSelectedModel()
 
     console.group('%c[AI Modal] Custom instruction', 'color: #a855f7; font-weight: bold')
     console.log('Instruction:', instruction)

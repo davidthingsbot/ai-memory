@@ -388,20 +388,32 @@ export function RepositoryTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileRefreshCounter])
 
-  // Poll for remote changes every 30s — directory listing + current file
+  // Poll for remote changes every 30s — only update state if something changed
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        // Refresh directory listing
-        loadDirectoryRef.current(currentPath)
+        // Fetch directory listing and compare SHAs
+        const freshEntries = await listDirectory(currentPath)
+        freshEntries.sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
+          return a.name.localeCompare(b.name)
+        })
 
-        // Refresh current file if not dirty
-        if (selectedFile && !editorDirty) {
-          const isBinary = /\.(png|jpe?g|gif|svg|webp|ico|bmp|avif|pdf)$/i.test(selectedFile)
-          if (!isBinary) {
+        // Only update if entries changed (compare by SHA fingerprint)
+        const currentFingerprint = entries.map(e => `${e.path}:${e.sha}`).join(',')
+        const freshFingerprint = freshEntries.map(e => `${e.path}:${e.sha}`).join(',')
+        if (currentFingerprint !== freshFingerprint) {
+          console.log('[poll] Directory changed:', currentPath)
+          setEntries(freshEntries)
+        }
+
+        // Check current file SHA from the listing (no extra API call)
+        if (selectedFile && !editorDirty && fileShaRef.current) {
+          const freshEntry = freshEntries.find(e => e.path === selectedFile)
+          if (freshEntry?.sha && freshEntry.sha !== fileShaRef.current) {
+            console.log(`[poll] File changed remotely: ${selectedFile}`)
             const file = await readFile(selectedFile)
-            if (file && fileShaRef.current && file.sha !== fileShaRef.current) {
-              console.log(`[poll] File changed remotely: ${selectedFile}`)
+            if (file) {
               selectFile(selectedFile, file.content)
               setOriginalContent(file.content)
               fileShaRef.current = file.sha
@@ -415,7 +427,7 @@ export function RepositoryTab() {
 
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPath, selectedFile, editorDirty])
+  }, [currentPath, selectedFile, editorDirty, entries])
 
   // Auto-select file when entering a directory:
   // 1. Last-viewed file in this directory
