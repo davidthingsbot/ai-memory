@@ -40,6 +40,9 @@ export interface AppState {
   promptModalOpen: boolean
   promptModalOperation: Operation | null
 
+  // File refresh signal (bumped after commits to trigger re-read)
+  fileRefreshCounter: number
+
   // Branch
   selectedBranch: string | null
 
@@ -60,6 +63,7 @@ export interface AppState {
   clearPendingChanges: () => void
   setCommitMessage: (message: string) => void
   setSelectedBranch: (branch: string | null) => void
+  requestFileRefresh: () => void
   openPromptModal: (operation: Operation) => void
   closePromptModal: () => void
   toggleDarkMode: () => void
@@ -80,6 +84,7 @@ export const useAppStore = create<AppState>()(
       commitMessage: '',
       promptModalOpen: false,
       promptModalOperation: null,
+      fileRefreshCounter: 0,
       selectedBranch: null,
       darkMode: true,
       
@@ -119,6 +124,7 @@ export const useAppStore = create<AppState>()(
       }),
       setCommitMessage: (message) => set({ commitMessage: message }),
       setSelectedBranch: (branch) => set({ selectedBranch: branch }),
+      requestFileRefresh: () => set((state) => ({ fileRefreshCounter: state.fileRefreshCounter + 1 })),
       openPromptModal: (operation) => set({
         promptModalOpen: true,
         promptModalOperation: operation,

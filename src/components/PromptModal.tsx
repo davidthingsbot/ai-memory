@@ -6,7 +6,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { MicButton } from '@/components/MicButton'
 import { WorkingBox } from '@/components/WorkingBox'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
-import { generatePlan, executePlan } from '@/lib/prompt-operations'
+import { generatePlan, executePlan, type DirectoryContext } from '@/lib/prompt-operations'
+import { listDirectory, readFile, getOldestFileInDirectory } from '@/lib/github-tools'
 import { tidyText, improveText, fullSpecText } from '@/lib/text-tools'
 import { ClarificationBox } from '@/components/ClarificationBox'
 import { Loader2, Sparkles, Check, AlertCircle, Wand2, Lightbulb, FileSearch, X, Undo2, Redo2 } from 'lucide-react'
@@ -140,18 +141,57 @@ export function PromptModal() {
     addStep('Working...')
 
     try {
+      // Gather directory context for new-file/new-folder operations
+      let directoryContext: DirectoryContext | undefined
+      const isDirectoryOp = promptModalOperation.type === 'new-file' || promptModalOperation.type === 'new-folder'
+      if (isDirectoryOp) {
+        addStep('Loading directory context...')
+        const dirPath = promptModalOperation.path
+        const entries = await listDirectory(dirPath)
+        const listing = entries.map(e => e.type === 'dir' ? e.name + '/' : e.name)
+
+        // Find a reference file: README.md first, then file matching directory basename
+        let referenceFile: DirectoryContext['referenceFile']
+        const dirName = dirPath.split('/').filter(Boolean).pop() || ''
+        const readme = entries.find(e => e.type === 'file' && e.name.toLowerCase() === 'readme.md')
+        const nameMatch = !readme && dirName
+          ? entries.find(e => e.type === 'file' && e.name.replace(/\.[^.]+$/, '').toLowerCase() === dirName.toLowerCase())
+          : undefined
+        // 3rd priority: oldest file in the directory (most foundational)
+        let firstFile: typeof entries[0] | undefined
+        if (!readme && !nameMatch) {
+          const oldestPath = await getOldestFileInDirectory(dirPath, entries.filter(e => e.type === 'file').map(e => e.path))
+          if (oldestPath) firstFile = entries.find(e => e.path === oldestPath)
+        }
+        const refEntry = readme || nameMatch || firstFile
+        if (refEntry) {
+          const file = await readFile(refEntry.path)
+          if (file) {
+            referenceFile = { path: refEntry.path, content: file.content }
+            addStep(`Using ${refEntry.name} as style reference`)
+          }
+        }
+
+        directoryContext = { path: dirPath, listing, referenceFile }
+      }
+
+      // For directory ops, use operation.path as the base; for file ops, use selectedFile
+      const effectiveFilePath = selectedFile || (isDirectoryOp ? promptModalOperation.path : undefined)
+
       const generatedPlan = await generatePlan({
         intent: effectiveIntent,
         operation: promptModalOperation,
-        filePath: selectedFile || undefined,
+        filePath: effectiveFilePath,
         fileContent: fileContent || undefined,
+        directoryContext,
       }, addStep)
 
       const result = await executePlan({
         plan: generatedPlan,
         operation: promptModalOperation,
-        filePath: selectedFile || undefined,
+        filePath: effectiveFilePath,
         fileContent: fileContent || undefined,
+        directoryContext,
       }, addStep)
 
       addPendingChange({
@@ -533,10 +573,6 @@ export function PromptModal() {
             </div>
           )}
           
-          {/* Working steps - show while executing */}
-          {stage === 'executing' && steps.length > 0 && (
-            <WorkingBox steps={steps} isWorking={isGenerating} startTime={startTime || undefined} />
-          )}
         </div>
       </DialogContent>
     </Dialog>

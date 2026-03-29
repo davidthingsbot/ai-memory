@@ -106,7 +106,11 @@ export async function readFile(path: string): Promise<FileContent | null> {
     }
 
     // Decode base64 content
-    const content = atob(response.data.content.replace(/\n/g, ''))
+    // Decode base64 → bytes → UTF-8 (atob alone mangles non-ASCII)
+    const binary = atob(response.data.content.replace(/\n/g, ''))
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const content = new TextDecoder('utf-8').decode(bytes)
 
     return {
       path: response.data.path,
@@ -188,6 +192,45 @@ export async function searchFiles(query: string): Promise<{ path: string; matche
     console.warn('Code search failed:', err)
     return []
   }
+}
+
+/**
+ * Find the oldest file in a directory by commit date.
+ * Uses a single API call to get commits for the directory, then picks the file
+ * from the earliest commit.
+ */
+export async function getOldestFileInDirectory(dirPath: string, filePaths: string[]): Promise<string | null> {
+  if (filePaths.length === 0) return null
+  const octokit = getOctokit()
+  const { owner, repo } = getRepoInfo()
+
+  try {
+    // Get commits touching this directory, oldest first
+    const response = await octokit.rest.repos.listCommits({
+      owner,
+      repo,
+      sha: getActiveBranch(),
+      path: dirPath || undefined,
+      per_page: 100,
+    })
+
+    // Walk from oldest commit forward, find the first file that still exists
+    const fileSet = new Set(filePaths)
+    for (let i = response.data.length - 1; i >= 0; i--) {
+      const commit = response.data[i]
+      // Get the files changed in this commit
+      const detail = await octokit.rest.repos.getCommit({ owner, repo, ref: commit.sha })
+      for (const file of detail.data.files || []) {
+        if (file.status === 'added' && fileSet.has(file.filename)) {
+          return file.filename
+        }
+      }
+    }
+  } catch {
+    // Fall back silently
+  }
+  // Fallback: first file alphabetically
+  return filePaths[0] || null
 }
 
 /**

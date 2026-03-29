@@ -155,6 +155,9 @@
   border-radius: 4px;
 }
 
+/* Prevent text selection outside file content areas */
+[data-file-toolbar] { user-select: none; }
+
 /* Monaco margin decorations for changed lines */
 .line-added-margin {
   background: rgb(34 197 94);

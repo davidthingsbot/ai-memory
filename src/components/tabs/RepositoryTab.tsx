@@ -237,6 +237,7 @@ export function RepositoryTab() {
     addPendingChange,
     darkMode,
     selectedBranch,
+    fileRefreshCounter,
   } = useAppStore()
   
   // Guard: redirect to setup if no repo selected
@@ -362,6 +363,59 @@ export function RepositoryTab() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile, fileContent])
+
+  // Re-read current file after a commit (fileRefreshCounter bumps)
+  useEffect(() => {
+    if (fileRefreshCounter > 0 && selectedFile && !editorDirty) {
+      const isBinary = /\.(png|jpe?g|gif|svg|webp|ico|bmp|avif|pdf)$/i.test(selectedFile)
+      if (isBinary) {
+        getFileAsDataUrl(selectedFile).then(dataUrl => {
+          if (dataUrl) { selectFile(selectedFile, ''); setImageDataUrl(dataUrl) }
+        }).catch(() => {})
+      } else {
+        readFile(selectedFile).then(file => {
+          if (file) {
+            selectFile(selectedFile, file.content)
+            setOriginalContent(file.content)
+            fileShaRef.current = file.sha
+            setEditorDirty(false)
+          }
+        }).catch(() => {})
+      }
+      // Also refresh directory listing
+      loadDirectoryRef.current(currentPath)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileRefreshCounter])
+
+  // Poll for remote changes every 30s — directory listing + current file
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        // Refresh directory listing
+        loadDirectoryRef.current(currentPath)
+
+        // Refresh current file if not dirty
+        if (selectedFile && !editorDirty) {
+          const isBinary = /\.(png|jpe?g|gif|svg|webp|ico|bmp|avif|pdf)$/i.test(selectedFile)
+          if (!isBinary) {
+            const file = await readFile(selectedFile)
+            if (file && fileShaRef.current && file.sha !== fileShaRef.current) {
+              console.log(`[poll] File changed remotely: ${selectedFile}`)
+              selectFile(selectedFile, file.content)
+              setOriginalContent(file.content)
+              fileShaRef.current = file.sha
+            }
+          }
+        }
+      } catch {
+        // Silently ignore polling errors
+      }
+    }, 30000)
+
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPath, selectedFile, editorDirty])
 
   // Auto-select file when entering a directory:
   // 1. Last-viewed file in this directory
@@ -882,11 +936,11 @@ export function RepositoryTab() {
   }, [selectedFile, openPromptModal, cursorOffset, selectionRange])
 
   const handleModify = useCallback(() => {
-    if (selectedFile && selectionRange) {
+    if (selectedFile) {
       openPromptModal({
         type: 'modify',
         path: selectedFile,
-        selection: selectionRange,
+        selection: selectionRange || undefined,
       })
     }
   }, [selectedFile, openPromptModal, selectionRange])
@@ -927,8 +981,27 @@ export function RepositoryTab() {
   const repoInfo = getSelectedRepo()
   const branchName = selectedBranch || repoInfo?.default_branch || 'main'
 
+  // Clear selection/cursor when clicking outside the file content area
+  const handleOutsideClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    // Don't clear if clicking inside the file content area or its toolbar
+    if (target.closest('[data-file-content]') || target.closest('[data-file-toolbar]')) return
+    // Don't clear if clicking buttons/inputs
+    if (target.closest('button') || target.closest('input') || target.closest('textarea')) return
+    // Clear selection and cursor
+    if (cursorOffset !== null || selectionRange !== null) {
+      setCursorOffset(null)
+      setSelectionRange(null)
+      window.getSelection()?.removeAllRanges()
+      if (selectedMediaRef.current) {
+        selectedMediaRef.current.classList.remove('media-selected')
+        selectedMediaRef.current = null
+      }
+    }
+  }, [cursorOffset, selectionRange])
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" onMouseDown={handleOutsideClick}>
       {/* Directory Section */}
       <div className="border-b p-4 space-y-3">
         {/* Search */}
@@ -1074,7 +1147,7 @@ export function RepositoryTab() {
         {selectedFile ? (
           <>
             {/* File header: filename | view-mode | actions */}
-            <div className="flex items-center px-4 py-2 border-b bg-muted/30 gap-2">
+            <div data-file-toolbar className="flex items-center px-4 py-2 border-b bg-muted/30 gap-2">
               <span className="flex items-center gap-2 text-base font-bold shrink min-w-0 px-3 py-1 rounded bg-muted ring-1 ring-primary">
                 <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
                 <span className="truncate">{selectedFile?.split('/').pop()}</span>
@@ -1153,8 +1226,8 @@ export function RepositoryTab() {
                     size="sm"
                     onClick={handleModify}
                     className="gap-1 h-7"
-                    disabled={!hasSelection}
-                    title={hasSelection ? "Modify selected text" : "Select text first to modify"}
+                    disabled={!selectedFile}
+                    title="Modify file or selection"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                     Modify
@@ -1183,7 +1256,7 @@ export function RepositoryTab() {
             </div>
 
             {/* File content */}
-            <div className="flex-1 min-h-0 flex flex-col relative">
+            <div data-file-content className="flex-1 min-h-0 flex flex-col relative">
               {/* Blinking cursor for preview/raw modes */}
               {viewMode !== 'edit' && !isImage && (
                 <BlinkingCursor visible={cursorOffset !== null && selectionRange === null} />

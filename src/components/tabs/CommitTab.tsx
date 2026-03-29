@@ -100,6 +100,7 @@ export function CommitTab() {
     setCommitMessage,
     setActiveTab,
     darkMode,
+    requestFileRefresh,
   } = useAppStore()
 
   const [isCommitting, setIsCommitting] = useState(false)
@@ -157,6 +158,7 @@ export function CommitTab() {
 
       if (result.success) {
         setCommitUrl(result.url || null)
+        requestFileRefresh()
       } else {
         throw new Error(result.error || 'Commit failed')
       }
