@@ -6,12 +6,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { MicButton } from '@/components/MicButton'
 import { WorkingBox } from '@/components/WorkingBox'
 import { useRealtimeTranscription } from '@/lib/useRealtimeTranscription'
-import { generatePlan, executePlan, type Plan } from '@/lib/prompt-operations'
+import { generatePlan, executePlan } from '@/lib/prompt-operations'
 import { tidyText, improveText, fullSpecText } from '@/lib/text-tools'
 import { ClarificationBox } from '@/components/ClarificationBox'
-import { Loader2, Sparkles, ArrowLeft, Check, AlertCircle, Wand2, Lightbulb, FileSearch, X, Undo2, Redo2 } from 'lucide-react'
+import { Loader2, Sparkles, Check, AlertCircle, Wand2, Lightbulb, FileSearch, X, Undo2, Redo2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 
-type Stage = 'intent' | 'plan' | 'executing' | 'done' | 'error'
+type Stage = 'prompt' | 'executing' | 'done' | 'error'
 
 export function PromptModal() {
   const { 
@@ -24,7 +25,7 @@ export function PromptModal() {
     setActiveTab,
   } = useAppStore()
   
-  const [stage, setStage] = useState<Stage>('intent')
+  const [stage, setStage] = useState<Stage>('prompt')
   const [intent, setIntentRaw] = useState('')
   const undoStack = useRef<string[]>([])
   const redoStack = useRef<string[]>([])
@@ -62,11 +63,10 @@ export function PromptModal() {
     undoStack.current.push(intent)
     setIntentRaw(redoStack.current.pop()!)
   }, [intent])
-  const [plan, setPlan] = useState<Plan | null>(null)
-  const [editedPlan, setEditedPlan] = useState('')
   const [steps, setSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [instruction, setInstruction] = useState('')
   const [startTime, setStartTime] = useState<number | null>(null)
   
   const intentInputRef = useRef<HTMLTextAreaElement>(null)
@@ -108,10 +108,9 @@ export function PromptModal() {
     if (!open) {
       closePromptModal()
       // Reset state
-      setStage('intent')
+      setStage('prompt')
       setIntent('')
-      setPlan(null)
-      setEditedPlan('')
+      setInstruction('')
       setSteps([])
       setError(null)
       setIsGenerating(false)
@@ -123,13 +122,13 @@ export function PromptModal() {
     }
   }, [closePromptModal])
   
-  // Generate plan from intent (empty intent = direct execute using just the context)
-  const handleGeneratePlan = useCallback(async () => {
+  // GO! — generate plan and execute in one step
+  const handleGo = useCallback(async () => {
     if (!promptModalOperation) return
     const effectiveIntent = intent.trim() || `${promptModalOperation.type} at ${promptModalOperation.path}`
 
-    console.group('%c[AI Modal] Generate Plan', 'color: #22c55e; font-weight: bold')
-    console.log('Intent:', effectiveIntent)
+    console.group('%c[AI Modal] GO!', 'color: #22c55e; font-weight: bold')
+    console.log('Prompt:', effectiveIntent)
     console.log('Context:', buildContext())
     console.groupEnd()
 
@@ -137,45 +136,8 @@ export function PromptModal() {
     setError(null)
     setSteps([])
     setStartTime(Date.now())
-
-    if (!intent.trim()) {
-      // No intent — skip plan, execute directly from context
-      addStep('Executing from context...')
-      try {
-        const generatedPlan = await generatePlan({
-          intent: effectiveIntent,
-          operation: promptModalOperation,
-          filePath: selectedFile || undefined,
-          fileContent: fileContent || undefined,
-        }, addStep)
-
-        setStage('executing')
-        const result = await executePlan({
-          plan: generatedPlan,
-          operation: promptModalOperation,
-          filePath: selectedFile || undefined,
-          fileContent: fileContent || undefined,
-        }, addStep)
-
-        const change: FileChange = {
-          path: result.path,
-          action: result.action,
-          content: result.content,
-          oldContent: fileContent || undefined,
-        }
-        addPendingChange(change)
-        addStep(`✓ Changes staged: ${result.path}`)
-        setStage('done')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Operation failed')
-        setStage('error')
-      } finally {
-        setIsGenerating(false)
-      }
-      return
-    }
-
-    addStep('Analyzing intent...')
+    setStage('executing')
+    addStep('Working...')
 
     try {
       const generatedPlan = await generatePlan({
@@ -185,63 +147,32 @@ export function PromptModal() {
         fileContent: fileContent || undefined,
       }, addStep)
 
-      setPlan(generatedPlan)
-      setEditedPlan(generatedPlan.description)
-      setStage('plan')
-      addStep('✓ Plan generated')
+      const result = await executePlan({
+        plan: generatedPlan,
+        operation: promptModalOperation,
+        filePath: selectedFile || undefined,
+        fileContent: fileContent || undefined,
+      }, addStep)
+
+      addPendingChange({
+        path: result.path,
+        action: result.action,
+        content: result.content,
+        oldContent: fileContent || undefined,
+      })
+      addStep(`✓ Changes staged: ${result.path}`)
+      setStage('done')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate plan')
+      setError(err instanceof Error ? err.message : 'Operation failed')
       setStage('error')
     } finally {
       setIsGenerating(false)
     }
   }, [intent, promptModalOperation, selectedFile, fileContent, addStep, buildContext, addPendingChange])
-
-  // Execute the plan
-  const handleExecute = useCallback(async () => {
-    if (!plan || !promptModalOperation) return
-
-    console.group('%c[AI Modal] Execute Plan', 'color: #f59e0b; font-weight: bold')
-    console.log('Plan:', editedPlan)
-    console.log('Original plan:', plan)
-    console.log('Context:', buildContext())
-    console.groupEnd()
-
-    setStage('executing')
-    setError(null)
-    setStartTime(Date.now())
-    addStep('Executing plan...')
-    
-    try {
-      const result = await executePlan({
-        plan: { ...plan, description: editedPlan },
-        operation: promptModalOperation,
-        filePath: selectedFile || undefined,
-        fileContent: fileContent || undefined,
-      }, addStep)
-      
-      // Add the change to pending changes
-      const change: FileChange = {
-        path: result.path,
-        action: result.action,
-        content: result.content,
-        oldContent: fileContent || undefined,
-      }
-      addPendingChange(change)
-      
-      addStep(`✓ Changes staged: ${result.path}`)
-      setStage('done')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Execution failed')
-      setStage('error')
-    }
-  }, [plan, editedPlan, promptModalOperation, selectedFile, fileContent, addStep, addPendingChange, buildContext])
   
   // Go back to intent stage
   const handleBack = useCallback(() => {
-    setStage('intent')
-    setPlan(null)
-    setEditedPlan('')
+    setStage('prompt')
     setSteps([])
     setError(null)
   }, [])
@@ -316,6 +247,56 @@ export function PromptModal() {
     pendingRefineMode.current = null
   }, [])
 
+  // Apply custom instruction to modify the prompt
+  const handleApplyInstruction = useCallback(async () => {
+    if (!instruction.trim() || !intent.trim()) return
+    setIsRefining(true)
+    setClarificationQuestion(null)
+
+    const apiKey = (await import('@/components/Credentials')).getOpenAIKey()
+    if (!apiKey) { setError('No OpenAI API key'); setIsRefining(false); return }
+    const model = (await import('@/components/ModelSelector')).getSelectedModel()
+
+    console.group('%c[AI Modal] Custom instruction', 'color: #a855f7; font-weight: bold')
+    console.log('Instruction:', instruction)
+    console.log('Current prompt:', intent)
+    console.groupEnd()
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: `The user is developing a prompt/request that will be sent to an AI. They have given you an instruction to modify their current prompt. Apply the instruction and return ONLY the revised prompt. Do not add commentary, explanations, or meta-text. Keep the same general format and scope unless the instruction says otherwise.` },
+            { role: 'user', content: `Current prompt:\n${intent}\n\nInstruction: ${instruction}` },
+          ],
+        }),
+      })
+      if (!response.ok) throw new Error(`API error: ${await response.text()}`)
+      const data = await response.json()
+      const result = data.choices[0]?.message?.content
+      if (result) {
+        pushIntent(result)
+        setInstruction('')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to apply instruction')
+    } finally {
+      setIsRefining(false)
+    }
+  }, [instruction, intent, pushIntent])
+
+  // Voice for instruction box
+  const instructionBaseRef = useRef<string>('')
+  const instructionTranscription = useRealtimeTranscription({
+    onTranscriptInsert: (newText, insertPos) => {
+      const base = instructionBaseRef.current
+      setInstruction(base.slice(0, insertPos) + newText + base.slice(insertPos))
+    },
+  })
+
   // Get operation title
   const getTitle = () => {
     if (!promptModalOperation) return 'AI Operation'
@@ -375,15 +356,14 @@ export function PromptModal() {
         </DialogHeader>
         
         <div className="flex-1 overflow-auto space-y-4">
-          {/* Stage: Intent */}
-          {stage === 'intent' && (
+          {/* Prompt development */}
+          {stage === 'prompt' && (
             <>
+              {/* Main prompt textarea */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  What do you want to {promptModalOperation?.type === 'insert' ? 'add' : 'change'}?
-                </label>
+                <label className="text-sm font-medium">Prompt</label>
                 <div className="flex gap-2">
-                    <MicButton
+                  <MicButton
                     recording={transcription.isRecording}
                     transcribing={transcription.isConnecting}
                     onRecordingChange={handleRecordingChange}
@@ -394,7 +374,7 @@ export function PromptModal() {
                     ref={intentInputRef}
                     value={intent}
                     onChange={(e) => setIntent(e.target.value)}
-                    placeholder="Describe what you want in natural language..."
+                    placeholder="Describe what you want..."
                     className="min-h-[100px] resize-none"
                     disabled={transcription.isRecording}
                   />
@@ -403,7 +383,45 @@ export function PromptModal() {
                   <p className="text-xs text-destructive">{transcription.error}</p>
                 )}
               </div>
-              
+
+              {/* Instruction box — voice/text to modify the prompt */}
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Refine the prompt with an instruction</label>
+                <div className="flex gap-2 items-center">
+                  <MicButton
+                    recording={instructionTranscription.isRecording}
+                    transcribing={instructionTranscription.isConnecting}
+                    onRecordingChange={(recording) => {
+                      if (recording) {
+                        instructionBaseRef.current = instruction
+                        instructionTranscription.startRecording(instruction.length)
+                      } else {
+                        instructionTranscription.stopRecording()
+                      }
+                    }}
+                    size="sm"
+                    showStatus={false}
+                    className="shrink-0"
+                  />
+                  <Input
+                    value={instruction}
+                    onChange={(e) => setInstruction(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleApplyInstruction()}
+                    placeholder='e.g. "focus on error handling" or "make it shorter"'
+                    className="h-8 text-sm"
+                    disabled={isRefining}
+                  />
+                  <Button
+                    variant="outline" size="sm" className="h-8 shrink-0"
+                    onClick={handleApplyInstruction}
+                    disabled={!instruction.trim() || !intent.trim() || isRefining}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </div>
+
+              {/* Tool buttons + GO */}
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost" size="sm" className="h-7 w-7 p-0"
@@ -433,7 +451,7 @@ export function PromptModal() {
                   variant="outline" size="sm" className="h-7 gap-1 text-xs"
                   onClick={() => handleRefine('improve')}
                   disabled={!intent.trim() || isRefining || isGenerating}
-                  title="Suggest structure improvements"
+                  title="Restructure and clarify"
                 >
                   <Lightbulb className="h-3 w-3" /> Improve
                 </Button>
@@ -447,17 +465,17 @@ export function PromptModal() {
                 </Button>
                 {isRefining && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                 <div className="flex-1" />
-                <Button size="sm" onClick={handleGeneratePlan} disabled={isGenerating || isRefining}>
+                <Button size="sm" onClick={handleGo} disabled={isGenerating || isRefining}>
                   {isGenerating ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
                     <Sparkles className="h-4 w-4 mr-2" />
                   )}
-                  Generate Plan
+                  Go!
                 </Button>
               </div>
 
-              {/* Clarification from AI */}
+              {/* Clarification from Full Spec */}
               {clarificationQuestion && (
                 <ClarificationBox
                   question={clarificationQuestion}
@@ -465,50 +483,6 @@ export function PromptModal() {
                   onSkip={handleClarificationSkip}
                 />
               )}
-            </>
-          )}
-          
-          {/* Stage: Plan Review */}
-          {stage === 'plan' && plan && (
-            <>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">AI-Generated Plan</label>
-                <p className="text-xs text-muted-foreground">
-                  Review and edit the plan below, then execute.
-                </p>
-                <Textarea
-                  value={editedPlan}
-                  onChange={(e) => setEditedPlan(e.target.value)}
-                  className="min-h-[150px] font-mono text-sm"
-                />
-              </div>
-              
-              {plan.outline && plan.outline.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Outline</label>
-                  <ul className="text-sm space-y-1 pl-4">
-                    {plan.outline.map((item, i) => (
-                      <li key={i} className="list-disc text-muted-foreground">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              <div className="flex justify-between">
-                <Button variant="ghost" onClick={handleBack}>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back
-                </Button>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleExecute}>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Execute
-                  </Button>
-                </div>
-              </div>
             </>
           )}
           
