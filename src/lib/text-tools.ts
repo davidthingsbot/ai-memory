@@ -171,22 +171,21 @@ export async function improveText(
       messages: [
         {
           role: 'system',
-          content: `You are a writing consultant. The user has given you rough notes about something they want to write. Your job is to distill their notes into a clear, concise TASK BRIEF.
+          content: `The user has written a rough request describing what they want an AI to do. Your job is to rewrite their request more clearly and completely — but you are NOT doing the work itself. You are improving the PROMPT that will be sent to another AI to generate a plan.
 ${contextInfo ? `\n${contextInfo}` : ''}${existingDoc}
 
-In 2-3 short paragraphs, describe:
-- What should be written (the deliverable)
-- The key points to cover
-- The target audience and tone
-- Any diagrams, images, or visuals that would help (the generator can fetch images from URLs or request diagrams)
+Rules:
+- Keep it to 2-3 short paragraphs
+- Restate what the user wants done in clearer, better-structured language
+- Fill in obvious gaps (e.g. if they mention a topic, spell out what aspects to cover)
+- Stay within the user's original scope and intent — do not add new ideas or flourishes
+- This is a request describing desired output, not the output itself
+- Do NOT add audience analysis, tone suggestions, or visual/diagram recommendations
+- Do NOT reference the original notes or say "the user wants"
+- Use plain ASCII quotes (" and ') only
+- Never ask for clarification
 
-Do NOT describe how the notes should be edited.
-Do NOT reference the original notes.
-Write as if briefing someone to create the content from scratch.
-Use plain ASCII quotes (" and ') only.
-Never ask for clarification - just work with what's given.
-
-Return ONLY the task brief.`
+Return ONLY the improved request.`
         },
         { role: 'user', content: text }
       ],

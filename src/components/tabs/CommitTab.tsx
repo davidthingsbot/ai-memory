@@ -1,17 +1,95 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { commitFiles } from '@/lib/github-commit'
 import { MarkdownPreview } from '@/components/MarkdownPreview'
+import { computeLineDiff } from '@/lib/line-diff'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
 import {
   GitCommit, Trash2, Upload, Loader2, Check,
   ChevronDown, ChevronRight, FileText, ExternalLink,
-  Undo2, Eye, Code
+  Undo2, Eye, Code, GitPullRequest
 } from 'lucide-react'
 
-type FileViewMode = 'preview' | 'raw'
+type FileViewMode = 'preview' | 'raw' | 'diff'
+
+/** Full file view with colored margin indicators for changes */
+function RawWithMargins({ oldContent, newContent }: { oldContent: string; newContent: string }) {
+  const lineDiffs = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent])
+
+  return (
+    <div className="text-xs font-mono">
+      {lineDiffs.map((line, i) => (
+        <div key={i} className={`flex ${
+          line.type === 'added' ? 'bg-green-50 dark:bg-green-950/20' :
+          line.type === 'removed' ? 'bg-red-50 dark:bg-red-950/20' : ''
+        }`}>
+          <div className="w-5 shrink-0 flex items-center justify-center">
+            {line.type === 'added' && <div className="w-1 h-full bg-green-500 rounded-full" />}
+            {line.type === 'removed' && <div className="w-1.5 h-1.5 bg-red-500 rounded-full" />}
+          </div>
+          <pre className={`flex-1 whitespace-pre-wrap px-1 py-px ${
+            line.type === 'removed' ? 'line-through text-red-600 dark:text-red-400' : ''
+          }`}>{line.text}</pre>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Preview with change indicators — renders blocks with green/red left borders */
+function PreviewWithMargins({ oldContent, newContent, isMarkdown, darkMode }: {
+  oldContent: string; newContent: string; isMarkdown: boolean; darkMode: boolean
+}) {
+  // Split into blocks and classify as added/removed/unchanged
+  const blocks = useMemo(() => {
+    const diffs = computeLineDiff(oldContent, newContent)
+    const result: { type: 'added' | 'removed' | 'unchanged'; text: string }[] = []
+    let current: typeof result[0] | null = null
+
+    for (const line of diffs) {
+      if (!current || current.type !== line.type) {
+        if (current) result.push(current)
+        current = { type: line.type, text: line.text }
+      } else {
+        current.text += '\n' + line.text
+      }
+    }
+    if (current) result.push(current)
+    return result
+  }, [oldContent, newContent])
+
+  return (
+    <div className="space-y-0">
+      {blocks.map((block, i) => (
+        <div key={i} className={`border-l-4 ${
+          block.type === 'added' ? 'border-green-500 bg-green-50/50 dark:bg-green-950/10' :
+          block.type === 'removed' ? 'border-red-500 bg-red-50/50 dark:bg-red-950/10' :
+          'border-transparent'
+        }`}>
+          {block.type === 'removed' ? (
+            isMarkdown ? (
+              <div className="p-2 opacity-50 line-through">
+                <MarkdownPreview content={block.text} darkMode={darkMode} />
+              </div>
+            ) : (
+              <pre className="p-2 text-xs font-mono whitespace-pre-wrap opacity-50 line-through">{block.text}</pre>
+            )
+          ) : (
+            isMarkdown ? (
+              <div className="p-2">
+                <MarkdownPreview content={block.text} darkMode={darkMode} />
+              </div>
+            ) : (
+              <pre className="p-2 text-xs font-mono whitespace-pre-wrap">{block.text}</pre>
+            )
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function CommitTab() {
   const {
@@ -61,6 +139,7 @@ export function CommitTab() {
     return isMarkdown ? 'preview' : 'raw'
   }, [fileViewModes])
 
+
   // Set view mode for a file
   const setFileViewMode = useCallback((path: string, mode: FileViewMode) => {
     setFileViewModes(prev => ({ ...prev, [path]: mode }))
@@ -94,11 +173,21 @@ export function CommitTab() {
   }, [handleCommit])
 
   // Handle discard all
-  const handleDiscardAll = useCallback(() => {
-    if (confirm('Discard all pending changes?')) {
-      clearPendingChanges()
-      setCommitUrl(null)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Auto-cancel confirmation after 10s (also cleans up on unmount = tab change)
+  useEffect(() => {
+    if (confirmDiscard) {
+      confirmTimerRef.current = setTimeout(() => setConfirmDiscard(false), 10000)
+      return () => { if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current) }
     }
+  }, [confirmDiscard])
+
+  const handleDiscardAll = useCallback(() => {
+    clearPendingChanges()
+    setCommitUrl(null)
+    setConfirmDiscard(false)
   }, [clearPendingChanges])
 
   // Handle done (go back to repository)
@@ -169,10 +258,21 @@ export function CommitTab() {
               ({pendingChanges.length} file{pendingChanges.length !== 1 ? 's' : ''})
             </span>
           </h2>
-          <Button variant="ghost" size="sm" onClick={handleDiscardAll}>
-            <Trash2 className="h-4 w-4 mr-1" />
-            Discard All
-          </Button>
+          {confirmDiscard ? (
+            <div className="flex gap-1 items-center">
+              <Button variant="destructive" size="sm" onClick={handleDiscardAll}>
+                Sure?
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDiscard(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setConfirmDiscard(true)}>
+              <Trash2 className="h-4 w-4 mr-1" />
+              Discard All
+            </Button>
+          )}
         </div>
       </div>
 
@@ -224,7 +324,7 @@ export function CommitTab() {
               {/* Expanded content */}
               {isExpanded && (
                 <div>
-                  {/* View mode toggle */}
+                  {/* View mode toggle: preview | raw | diff */}
                   <div className="flex items-center gap-1 px-3 py-1.5 border-b bg-muted/30">
                     <div className="flex rounded-md border overflow-hidden">
                       <Button
@@ -245,27 +345,41 @@ export function CommitTab() {
                         <Code className="h-3 w-3 mr-1" />
                         Raw
                       </Button>
+                      {hasDiff && (
+                        <Button
+                          variant={viewMode === 'diff' ? 'secondary' : 'ghost'}
+                          size="sm"
+                          className="rounded-none h-6 px-2 text-xs"
+                          onClick={(e) => { e.stopPropagation(); setFileViewMode(change.path, 'diff') }}
+                        >
+                          <GitPullRequest className="h-3 w-3 mr-1" />
+                          Diff
+                        </Button>
+                      )}
                     </div>
-                    {hasDiff && (
-                      <span className="text-xs text-muted-foreground ml-2">diff</span>
-                    )}
                   </div>
 
                   {/* File content */}
-                  <div className="max-h-96 overflow-auto">
-                    {viewMode === 'raw' ? (
-                      /* Raw mode */
+                  <div className="max-h-[32rem] overflow-auto">
+                    {viewMode === 'diff' && hasDiff ? (
+                      /* Pure diff */
+                      <ReactDiffViewer
+                        oldValue={change.oldContent || ''}
+                        newValue={change.content || ''}
+                        splitView={false}
+                        compareMethod={DiffMethod.WORDS}
+                        useDarkTheme={darkMode}
+                        hideLineNumbers
+                        styles={{
+                          contentText: { fontSize: '11px', fontFamily: 'monospace' }
+                        }}
+                      />
+                    ) : viewMode === 'raw' ? (
+                      /* Raw — full file with margin indicators */
                       hasDiff ? (
-                        <ReactDiffViewer
-                          oldValue={change.oldContent || ''}
-                          newValue={change.content || ''}
-                          splitView={false}
-                          compareMethod={DiffMethod.WORDS}
-                          useDarkTheme={darkMode}
-                          hideLineNumbers
-                          styles={{
-                            contentText: { fontSize: '11px', fontFamily: 'monospace' }
-                          }}
+                        <RawWithMargins
+                          oldContent={change.oldContent || ''}
+                          newContent={change.content || ''}
                         />
                       ) : change.action === 'delete' ? (
                         <pre className="p-3 text-xs font-mono whitespace-pre-wrap bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-200">
@@ -277,30 +391,14 @@ export function CommitTab() {
                         </pre>
                       )
                     ) : (
-                      /* Preview mode */
+                      /* Preview — full file rendered with change borders */
                       hasDiff ? (
-                        <div className="grid grid-cols-2 divide-x">
-                          <div className="p-3 overflow-auto">
-                            <div className="text-xs font-medium text-muted-foreground mb-2">Before</div>
-                            {isMarkdown ? (
-                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
-                                <MarkdownPreview content={change.oldContent || ''} darkMode={darkMode} />
-                              </div>
-                            ) : (
-                              <pre className="text-xs font-mono whitespace-pre-wrap">{change.oldContent}</pre>
-                            )}
-                          </div>
-                          <div className="p-3 overflow-auto">
-                            <div className="text-xs font-medium text-muted-foreground mb-2">After</div>
-                            {isMarkdown ? (
-                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
-                                <MarkdownPreview content={change.content || ''} darkMode={darkMode} />
-                              </div>
-                            ) : (
-                              <pre className="text-xs font-mono whitespace-pre-wrap">{change.content}</pre>
-                            )}
-                          </div>
-                        </div>
+                        <PreviewWithMargins
+                          oldContent={change.oldContent || ''}
+                          newContent={change.content || ''}
+                          isMarkdown={isMarkdown}
+                          darkMode={darkMode}
+                        />
                       ) : change.action === 'delete' ? (
                         <div className="p-3 opacity-60">
                           {isMarkdown ? (

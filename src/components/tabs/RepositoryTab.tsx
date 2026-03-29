@@ -11,6 +11,7 @@ import Editor, { type OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { getSelectedRepo } from '@/components/RepoSelection'
 import { findSelectionInRaw, findImageMarkdown, findCodeFenceBounds, findTableBounds, expandToBlockBoundaries } from '@/lib/selection-helpers'
+import { getChangedLineNumbers, computeLineDiff } from '@/lib/line-diff'
 import {
   FolderOpen, FileText, ChevronRight, Home,
   Loader2, Eye, Code, Edit3, Search, X,
@@ -345,11 +346,15 @@ export function RepositoryTab() {
       setLoading(false)
     }
   }, [selectedFile, editorDirty, selectFile])
-  
-  // Initial load and path changes
+
+  // Keep a stable ref so the effect doesn't re-fire when loadDirectory's deps change
+  const loadDirectoryRef = useRef(loadDirectory)
+  loadDirectoryRef.current = loadDirectory
+
+  // Load directory only when the path actually changes
   useEffect(() => {
-    loadDirectory(currentPath)
-  }, [currentPath, loadDirectory])
+    loadDirectoryRef.current(currentPath)
+  }, [currentPath])
   
   // Reload file content if we have a selectedFile but no content (e.g., after page refresh)
   useEffect(() => {
@@ -497,6 +502,36 @@ export function RepositoryTab() {
     }
   }, [setFileContent, originalContent])
   
+  // Monaco decoration IDs for margin indicators
+  const decorationsRef = useRef<string[]>([])
+
+  // Update margin indicators when content changes in edit mode
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor || viewMode !== 'edit' || !originalContent || !fileContent) {
+      return
+    }
+    if (fileContent === originalContent) {
+      decorationsRef.current = editor.deltaDecorations(decorationsRef.current, [])
+      return
+    }
+    const { added, removed } = getChangedLineNumbers(originalContent, fileContent)
+    const decorations: import('monaco-editor').editor.IModelDeltaDecoration[] = []
+    for (const lineNum of added) {
+      decorations.push({
+        range: { startLineNumber: lineNum, startColumn: 1, endLineNumber: lineNum, endColumn: 1 },
+        options: { isWholeLine: true, linesDecorationsClassName: 'line-added-margin' },
+      })
+    }
+    for (const lineNum of removed) {
+      decorations.push({
+        range: { startLineNumber: lineNum, startColumn: 1, endLineNumber: lineNum, endColumn: 1 },
+        options: { isWholeLine: true, linesDecorationsClassName: 'line-removed-margin' },
+      })
+    }
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, decorations)
+  }, [fileContent, originalContent, viewMode])
+
   // Suppress cursor events during programmatic position changes
   const suppressCursorRef = useRef(false)
 
@@ -1182,12 +1217,36 @@ export function RepositoryTab() {
                     className="p-4 overflow-auto flex-1"
                     onMouseUp={handlePreviewMouseUp}
                   >
-                    <MarkdownPreview
-                      content={fileContent}
-                      basePath={basePath}
-                      onNavigate={handleSelectFile}
-                      darkMode={darkMode}
-                    />
+                    {editorDirty && originalContent ? (() => {
+                      const diffs = computeLineDiff(originalContent, fileContent)
+                      const blocks: { type: 'added' | 'removed' | 'unchanged'; text: string }[] = []
+                      let cur: typeof blocks[0] | null = null
+                      for (const line of diffs) {
+                        if (!cur || cur.type !== line.type) { if (cur) blocks.push(cur); cur = { type: line.type, text: line.text } }
+                        else cur.text += '\n' + line.text
+                      }
+                      if (cur) blocks.push(cur)
+                      return blocks.map((block, i) => (
+                        <div key={i} className={`border-l-4 ${
+                          block.type === 'added' ? 'border-green-500 bg-green-50/30 dark:bg-green-950/10' :
+                          block.type === 'removed' ? 'border-red-500 bg-red-50/30 dark:bg-red-950/10' :
+                          'border-transparent'
+                        }`}>
+                          {block.type === 'removed' ? (
+                            <div className="opacity-50 line-through"><MarkdownPreview content={block.text} basePath={basePath} onNavigate={handleSelectFile} darkMode={darkMode} /></div>
+                          ) : (
+                            <MarkdownPreview content={block.text} basePath={basePath} onNavigate={handleSelectFile} darkMode={darkMode} />
+                          )}
+                        </div>
+                      ))
+                    })() : (
+                      <MarkdownPreview
+                        content={fileContent}
+                        basePath={basePath}
+                        onNavigate={handleSelectFile}
+                        darkMode={darkMode}
+                      />
+                    )}
                   </div>
                 ) : (
                   <div className="flex-1 min-h-0">
@@ -1196,6 +1255,16 @@ export function RepositoryTab() {
                       height="100%"
                       language={editorLanguage}
                       value={fileContent || ''}
+                      onMount={(editor) => {
+                        // Apply margin decorations to read-only preview too
+                        if (originalContent && fileContent && fileContent !== originalContent) {
+                          const { added, removed } = getChangedLineNumbers(originalContent, fileContent)
+                          const decos: import('monaco-editor').editor.IModelDeltaDecoration[] = []
+                          for (const ln of added) decos.push({ range: { startLineNumber: ln, startColumn: 1, endLineNumber: ln, endColumn: 1 }, options: { isWholeLine: true, linesDecorationsClassName: 'line-added-margin' } })
+                          for (const ln of removed) decos.push({ range: { startLineNumber: ln, startColumn: 1, endLineNumber: ln, endColumn: 1 }, options: { isWholeLine: true, linesDecorationsClassName: 'line-removed-margin' } })
+                          editor.deltaDecorations([], decos)
+                        }
+                      }}
                       theme={darkMode ? 'vs-dark' : 'vs'}
                       options={{
                         readOnly: true,
@@ -1229,13 +1298,36 @@ export function RepositoryTab() {
                   />
                 </div>
               ) : (
-                <pre
-                  ref={rawPreRef}
-                  className="p-4 text-xs font-mono whitespace-pre-wrap overflow-auto flex-1"
-                  onMouseUp={handleTextMouseUp}
-                >
-                  {fileContent}
-                </pre>
+                editorDirty && originalContent && fileContent && fileContent !== originalContent ? (
+                  <div
+                    ref={rawPreRef as React.RefObject<HTMLDivElement>}
+                    className="text-xs font-mono overflow-auto flex-1"
+                    onMouseUp={handleTextMouseUp}
+                  >
+                    {computeLineDiff(originalContent, fileContent).map((line, i) => (
+                      <div key={i} className={`flex ${
+                        line.type === 'added' ? 'bg-green-50 dark:bg-green-950/20' :
+                        line.type === 'removed' ? 'bg-red-50 dark:bg-red-950/20' : ''
+                      }`}>
+                        <div className="w-5 shrink-0 flex items-center justify-center">
+                          {line.type === 'added' && <div className="w-1 h-full bg-green-500 rounded-full" />}
+                          {line.type === 'removed' && <div className="w-1.5 h-1.5 bg-red-500 rounded-full" />}
+                        </div>
+                        <pre className={`flex-1 whitespace-pre-wrap px-2 py-px ${
+                          line.type === 'removed' ? 'line-through text-red-600 dark:text-red-400 opacity-50' : ''
+                        }`}>{line.text}</pre>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <pre
+                    ref={rawPreRef}
+                    className="p-4 text-xs font-mono whitespace-pre-wrap overflow-auto flex-1"
+                    onMouseUp={handleTextMouseUp}
+                  >
+                    {fileContent}
+                  </pre>
+                )
               )}
             </div>
 

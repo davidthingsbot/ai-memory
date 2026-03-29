@@ -154,3 +154,19 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* Monaco margin decorations for changed lines */
+.line-added-margin {
+  background: rgb(34 197 94);
+  width: 3px !important;
+  margin-left: 3px;
+  border-radius: 1px;
+}
+.line-removed-margin {
+  width: 6px !important;
+  height: 6px !important;
+  margin-left: 1px;
+  margin-top: 7px;
+  background: rgb(239 68 68);
+  border-radius: 50%;
+}
