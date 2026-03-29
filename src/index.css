@@ -155,6 +155,20 @@
   border-radius: 4px;
 }
 
+/* Dark mode scrollbars — force on html, body, and all elements */
+.dark {
+  color-scheme: dark;
+  scrollbar-color: #444 #1a1a1a;
+}
+.dark, .dark * {
+  scrollbar-color: #444 #1a1a1a;
+  scrollbar-width: thin;
+}
+.dark::-webkit-scrollbar, .dark *::-webkit-scrollbar { width: 8px; height: 8px; }
+.dark::-webkit-scrollbar-track, .dark *::-webkit-scrollbar-track { background: #1a1a1a; }
+.dark::-webkit-scrollbar-thumb, .dark *::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+.dark::-webkit-scrollbar-thumb:hover, .dark *::-webkit-scrollbar-thumb:hover { background: #555; }
+
 /* Prevent text selection outside file content areas */
 [data-file-toolbar] { user-select: none; }
 
